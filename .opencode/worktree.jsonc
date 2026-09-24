@@ -1,0 +1,41 @@
+{
+  // Worktree plugin configuration
+
+  // Custom base path for worktree storage (supports ~)
+  // Default: ~/.local/share/opencode/worktree
+  // "worktreePath": "~/my-worktrees",
+
+  "sync": {
+    // Files to copy from main worktree to new worktrees
+    // Example: [".env", ".env.local", "dev.sqlite"]
+    "copyFiles": [],
+
+    // Directories to symlink (saves disk space)
+    // Example: ["node_modules"]
+    "symlinkDirs": [],
+
+    // Patterns to exclude from copying
+    "exclude": []
+  },
+
+  "hooks": {
+    // Commands to run after worktree creation
+    // Example: ["pnpm install", "docker compose up -d"]
+    "postCreate": [],
+
+    // Commands to run before worktree deletion
+    // Example: ["docker compose down"]
+    "preDelete": []
+  },
+
+  "gc": {
+    // Enable automatic pruning of stale worktrees
+    "enabled": true,
+
+    // Prune worktrees older than this many days
+    "maxAgeDays": 30,
+
+    // Only prune worktrees whose branch is merged into its base branch
+    "onlyIfMerged": true
+  }
+}

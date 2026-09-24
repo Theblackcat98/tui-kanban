@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "name": "Project Board",
+  "columns": [
+    {
+      "id": "backlog",
+      "name": "Backlog",
+      "tasks": [
+        {
+          "id": "8c01e12a-88e9-4b90-bb72-c667e751031e",
+          "title": "Task 1",
+          "description": "This is the description for task number one",
+          "created_at": 1790288111443,
+          "updated_at": 1790288111443
+        }
+      ]
+    },
+    {
+      "id": "in-progress",
+      "name": "In Progress",
+      "tasks": [
+        {
+          "id": "4ddb73ea-7e87-4752-9039-04527ef556c8",
+          "title": "in progress task",
+          "description": "progressing",
+          "created_at": 1790288250637,
+          "updated_at": 1790288250637
+        },
+        {
+          "id": "d3fa9414-6e4f-4819-8d1b-aac5dc2f983a",
+          "title": "progress 3",
+          "description": "",
+          "created_at": 1790288279853,
+          "updated_at": 1790288279853
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "name": "Done",
+      "tasks": []
+    }
+  ]
+}
