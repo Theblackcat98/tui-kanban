@@ -174,12 +174,45 @@ pub enum SaveState {
     Error(String),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewMode {
+    Board,
+    AllTasks,
+}
+
+impl ViewMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Board => "BOARD",
+            Self::AllTasks => "ALL TASKS",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FocusRegion {
+    Rail,
+    Cards,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VisibleTask {
+    pub column: usize,
+    pub task: usize,
+    pub id: uuid::Uuid,
+}
+
 #[derive(Clone, Debug)]
 pub struct App {
     pub board: Board,
     pub store: JsonStore,
     pub selected_column: usize,
     pub selected_task: usize,
+    pub selected_task_uuid: Option<uuid::Uuid>,
+    pub view_mode: ViewMode,
+    pub focus: FocusRegion,
+    pub all_tasks_scroll: u16,
+    pub detail_scroll: u16,
     pub mode: Mode,
     pub search_query: String,
     pub search_input: TextInput,
@@ -202,6 +235,11 @@ impl App {
             store,
             selected_column: 0,
             selected_task: 0,
+            selected_task_uuid: None,
+            view_mode: ViewMode::Board,
+            focus: FocusRegion::Cards,
+            all_tasks_scroll: 0,
+            detail_scroll: 0,
             mode: Mode::Dashboard,
             search_query: String::new(),
             search_input: TextInput::new(String::new()),
@@ -237,7 +275,7 @@ impl App {
                     self.mode = Mode::Editor(editor);
                 }
             }
-            Mode::Detail(_) => self.handle_detail_key(key),
+            Mode::Detail(_) => self.handle_detail_key(key, now),
             Mode::Help => self.handle_help_key(key),
             Mode::ConfirmDelete(_) => self.handle_confirm_key(key, now),
         }
@@ -271,6 +309,11 @@ impl App {
     }
 
     pub fn selected_task_id(&self) -> Option<uuid::Uuid> {
+        if let Some(id) = self.selected_task_uuid
+            && self.board.task(id).is_some()
+        {
+            return Some(id);
+        }
         let column = self.board.columns.get(self.selected_column)?;
         let visible = self.visible_task_indices(self.selected_column);
         let index = *visible.get(self.selected_task_visual_index(self.selected_column))?;
@@ -293,6 +336,27 @@ impl App {
             .unwrap_or_default()
     }
 
+    pub fn visible_tasks(&self) -> Vec<VisibleTask> {
+        self.board
+            .columns
+            .iter()
+            .enumerate()
+            .flat_map(|(column_index, column)| {
+                column
+                    .tasks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, task)| task.matches(&self.search_query))
+                    .map(move |(task_index, task)| VisibleTask {
+                        column: column_index,
+                        task: task_index,
+                        id: task.id,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
     pub fn selected_task_visual_index(&self, column: usize) -> usize {
         let visible = self.visible_task_indices(column);
         visible
@@ -309,6 +373,28 @@ impl App {
             .unwrap_or("No column")
     }
 
+    fn set_selected_task_id(&mut self, id: uuid::Uuid) {
+        if let Some((column, task)) = self.board.task_location(id) {
+            self.selected_column = column;
+            self.selected_task = task;
+            self.selected_task_uuid = Some(id);
+        }
+    }
+
+    fn set_selected_task_index(&mut self, column: usize, task: usize) {
+        if let Some(task_id) = self
+            .board
+            .columns
+            .get(column)
+            .and_then(|column| column.tasks.get(task))
+            .map(|task| task.id)
+        {
+            self.selected_column = column;
+            self.selected_task = task;
+            self.selected_task_uuid = Some(task_id);
+        }
+    }
+
     pub fn status_text(&self) -> String {
         match &self.save_state {
             SaveState::Clean => "saved".to_owned(),
@@ -320,6 +406,10 @@ impl App {
     fn handle_dashboard_key(&mut self, key: KeyEvent, now: Instant) {
         if self.search_active {
             self.handle_search_key(key);
+            return;
+        }
+        if key.code == KeyCode::Esc && !self.search_query.is_empty() {
+            self.clear_search();
             return;
         }
 
@@ -340,21 +430,58 @@ impl App {
             KeyCode::Char('/') => {
                 self.search_active = true;
                 self.search_input = TextInput::new(self.search_query.clone());
+                self.focus = FocusRegion::Cards;
                 self.animations
                     .start(AnimationKind::Selection, Duration::from_millis(120));
             }
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.focus = match self.focus {
+                    FocusRegion::Rail => FocusRegion::Cards,
+                    FocusRegion::Cards => FocusRegion::Rail,
+                };
+            }
+            KeyCode::Char('v') | KeyCode::Char('V') => {
+                self.view_mode = match self.view_mode {
+                    ViewMode::Board => ViewMode::AllTasks,
+                    ViewMode::AllTasks => ViewMode::Board,
+                };
+                self.all_tasks_scroll = 0;
+                self.focus = FocusRegion::Cards;
+                self.animations
+                    .start(AnimationKind::Selection, Duration::from_millis(140));
+            }
             KeyCode::Char('H') => self.move_selected_task(-1, now),
             KeyCode::Char('L') => self.move_selected_task(1, now),
-            KeyCode::Enter => self.open_detail(),
-            KeyCode::Left | KeyCode::Char('h') => self.move_column(-1),
-            KeyCode::Right | KeyCode::Char('l') => self.move_column(1),
-            KeyCode::Up | KeyCode::Char('k') => self.move_task_vertical(-1),
-            KeyCode::Down | KeyCode::Char('j') => self.move_task_vertical(1),
-            KeyCode::PageUp => self.move_task_vertical(-5),
-            KeyCode::PageDown => self.move_task_vertical(5),
-            KeyCode::Home => self.select_first_visible_task(),
-            KeyCode::End => self.select_last_visible_task(),
-            _ => {}
+            _ => self.handle_dashboard_navigation_key(key),
+        }
+    }
+
+    fn handle_dashboard_navigation_key(&mut self, key: KeyEvent) {
+        match self.focus {
+            FocusRegion::Rail => match key.code {
+                KeyCode::Left | KeyCode::Char('h') | KeyCode::Up | KeyCode::Char('k') => {
+                    self.move_column(-1)
+                }
+                KeyCode::Right | KeyCode::Char('l') | KeyCode::Down | KeyCode::Char('j') => {
+                    self.move_column(1)
+                }
+                KeyCode::Home => self.select_column(0),
+                KeyCode::End => self.select_column(self.board.columns.len().saturating_sub(1)),
+                KeyCode::Enter => self.focus = FocusRegion::Cards,
+                _ => {}
+            },
+            FocusRegion::Cards => match key.code {
+                KeyCode::Left | KeyCode::Char('h') => self.move_column(-1),
+                KeyCode::Right | KeyCode::Char('l') => self.move_column(1),
+                KeyCode::Up | KeyCode::Char('k') => self.move_task_vertical(-1),
+                KeyCode::Down | KeyCode::Char('j') => self.move_task_vertical(1),
+                KeyCode::PageUp => self.move_task_vertical(-5),
+                KeyCode::PageDown => self.move_task_vertical(5),
+                KeyCode::Home => self.select_first_visible_task(),
+                KeyCode::End => self.select_last_visible_task(),
+                KeyCode::Enter => self.open_detail(),
+                _ => {}
+            },
         }
     }
 
@@ -367,6 +494,15 @@ impl App {
                 self.search_query = self.search_input.value.clone();
                 self.normalize_selection();
             }
+            KeyCode::Delete => {
+                self.search_input.delete();
+                self.search_query = self.search_input.value.clone();
+                self.normalize_selection();
+            }
+            KeyCode::Left => self.search_input.move_left(),
+            KeyCode::Right => self.search_input.move_right(),
+            KeyCode::Home => self.search_input.home(),
+            KeyCode::End => self.search_input.end(),
             KeyCode::Char(character)
                 if !key.modifiers.contains(KeyModifiers::CONTROL)
                     && !key.modifiers.contains(KeyModifiers::ALT) =>
@@ -431,11 +567,18 @@ impl App {
         }
     }
 
-    fn handle_detail_key(&mut self, key: KeyEvent) {
+    fn handle_detail_key(&mut self, key: KeyEvent, now: Instant) {
         match key.code {
-            KeyCode::Esc => self.mode = Mode::Dashboard,
+            KeyCode::Esc => {
+                self.mode = Mode::Dashboard;
+                self.detail_scroll = 0;
+            }
             KeyCode::Char('e') | KeyCode::Char('E') => self.open_editor(),
             KeyCode::Char('d') | KeyCode::Char('D') => self.open_delete_confirmation(),
+            KeyCode::Char('H') => self.move_selected_task(-1, now),
+            KeyCode::Char('L') => self.move_selected_task(1, now),
+            KeyCode::PageUp => self.detail_scroll = self.detail_scroll.saturating_sub(3),
+            KeyCode::PageDown => self.detail_scroll = self.detail_scroll.saturating_add(3),
             _ => {}
         }
     }
@@ -469,6 +612,7 @@ impl App {
     fn open_detail(&mut self) {
         if let Some(id) = self.selected_task_id() {
             self.mode = Mode::Detail(id);
+            self.detail_scroll = 0;
             self.animations
                 .start(AnimationKind::Drawer, Duration::from_millis(220));
         }
@@ -499,10 +643,7 @@ impl App {
         match result {
             Ok(id) => {
                 self.mode = Mode::Dashboard;
-                if let Some((column, task_index)) = self.board.task_location(id) {
-                    self.selected_column = column;
-                    self.selected_task = task_index;
-                }
+                self.set_selected_task_id(id);
                 self.normalize_selection();
                 self.show_toast("Task saved", ToastKind::Success, Duration::from_secs(3));
                 self.animations
@@ -538,6 +679,7 @@ impl App {
             Ok(outcome) => {
                 self.selected_column = outcome.to_column;
                 self.selected_task = outcome.to_index;
+                self.selected_task_uuid = Some(id);
                 self.normalize_selection();
                 self.animations
                     .start(AnimationKind::CardMove, Duration::from_millis(240));
@@ -580,37 +722,73 @@ impl App {
             .saturating_add_signed(direction as isize)
             .min(self.board.columns.len() - 1);
         if next != self.selected_column {
-            self.selected_column = next;
-            self.normalize_selection();
-            self.animations
-                .start(AnimationKind::Selection, Duration::from_millis(140));
+            self.select_column(next);
         }
     }
 
-    fn move_task_vertical(&mut self, direction: i32) {
-        let visible = self.visible_task_indices(self.selected_column);
-        if visible.is_empty() {
-            self.selected_task = 0;
+    fn select_column(&mut self, column: usize) {
+        if self.board.columns.is_empty() {
             return;
         }
-        let current = self
-            .selected_task_visual_index(self.selected_column)
-            .saturating_add_signed(direction as isize);
-        let next = current.clamp(0, visible.len() - 1);
-        self.selected_task = visible[next];
+        let next = column.min(self.board.columns.len() - 1);
+        self.selected_column = next;
+        self.selected_task = 0;
+        self.selected_task_uuid = None;
+        self.normalize_selection();
+        self.animations
+            .start(AnimationKind::Selection, Duration::from_millis(140));
+    }
+
+    fn move_task_vertical(&mut self, direction: i32) {
+        if self.view_mode == ViewMode::AllTasks {
+            let visible = self.visible_tasks();
+            if visible.is_empty() {
+                self.selected_task = 0;
+                self.selected_task_uuid = None;
+                return;
+            }
+            let current = self
+                .selected_task_id()
+                .and_then(|id| visible.iter().position(|task| task.id == id))
+                .unwrap_or(0);
+            let next = current
+                .saturating_add_signed(direction as isize)
+                .min(visible.len() - 1);
+            self.set_selected_task_id(visible[next].id);
+        } else {
+            let visible = self.visible_task_indices(self.selected_column);
+            if visible.is_empty() {
+                self.selected_task = 0;
+                self.selected_task_uuid = None;
+                return;
+            }
+            let current = self
+                .selected_task_visual_index(self.selected_column)
+                .saturating_add_signed(direction as isize);
+            let next = current.clamp(0, visible.len() - 1);
+            self.set_selected_task_index(self.selected_column, visible[next]);
+        }
         self.animations
             .start(AnimationKind::Selection, Duration::from_millis(100));
     }
 
     fn select_first_visible_task(&mut self) {
-        if let Some(index) = self.visible_task_indices(self.selected_column).first() {
-            self.selected_task = *index;
+        if self.view_mode == ViewMode::AllTasks {
+            if let Some(task) = self.visible_tasks().first() {
+                self.set_selected_task_id(task.id);
+            }
+        } else if let Some(index) = self.visible_task_indices(self.selected_column).first() {
+            self.set_selected_task_index(self.selected_column, *index);
         }
     }
 
     fn select_last_visible_task(&mut self) {
-        if let Some(index) = self.visible_task_indices(self.selected_column).last() {
-            self.selected_task = *index;
+        if self.view_mode == ViewMode::AllTasks {
+            if let Some(task) = self.visible_tasks().last() {
+                self.set_selected_task_id(task.id);
+            }
+        } else if let Some(index) = self.visible_task_indices(self.selected_column).last() {
+            self.set_selected_task_index(self.selected_column, *index);
         }
     }
 
@@ -625,17 +803,26 @@ impl App {
         if self.board.columns.is_empty() {
             self.selected_column = 0;
             self.selected_task = 0;
+            self.selected_task_uuid = None;
             return;
         }
         self.selected_column = self.selected_column.min(self.board.columns.len() - 1);
-        let visible = self.visible_task_indices(self.selected_column);
-        self.selected_task = if visible.is_empty() {
-            0
-        } else if visible.contains(&self.selected_task) {
-            self.selected_task
+        if let Some(id) = self.selected_task_uuid
+            && let Some((column, task)) = self.board.task_location(id)
+        {
+            let matches = self.board.columns[column].tasks[task].matches(&self.search_query);
+            if matches || self.search_query.is_empty() {
+                self.selected_column = column;
+                self.selected_task = task;
+                return;
+            }
+        }
+        if let Some(index) = self.visible_task_indices(self.selected_column).first() {
+            self.set_selected_task_index(self.selected_column, *index);
         } else {
-            visible[0]
-        };
+            self.selected_task = 0;
+            self.selected_task_uuid = None;
+        }
     }
 
     fn show_toast(&mut self, message: impl Into<String>, kind: ToastKind, duration: Duration) {
@@ -768,5 +955,31 @@ mod tests {
         app.handle_key(key(KeyCode::Char('d')), now);
         app.handle_key(key(KeyCode::Char('y')), now);
         assert_eq!(app.board.task_count(), 0);
+    }
+
+    #[test]
+    fn toggles_all_tasks_and_rail_focus() {
+        let (_directory, mut app) = test_app();
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Char('v')), now);
+        assert_eq!(app.view_mode, ViewMode::AllTasks);
+        assert_eq!(app.focus, FocusRegion::Cards);
+        app.handle_key(key(KeyCode::Tab), now);
+        assert_eq!(app.focus, FocusRegion::Rail);
+        app.handle_key(key(KeyCode::Enter), now);
+        assert_eq!(app.focus, FocusRegion::Cards);
+    }
+
+    #[test]
+    fn all_tasks_navigation_keeps_task_identity() {
+        let (_directory, mut app) = test_app();
+        let first = app.board.add_task(0, "First", "").unwrap();
+        let second = app.board.add_task(1, "Second", "").unwrap();
+        app.view_mode = ViewMode::AllTasks;
+        app.set_selected_task_id(first);
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Down), now);
+        assert_eq!(app.selected_task_id(), Some(second));
+        assert_eq!(app.selected_column, 1);
     }
 }

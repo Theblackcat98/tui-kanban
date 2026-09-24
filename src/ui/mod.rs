@@ -1,6 +1,8 @@
+mod cards;
 mod dashboard;
 mod detail;
 mod help;
+mod sidebar;
 mod task_editor;
 
 use crate::animation::{AnimationKind, ease_out_cubic};
@@ -28,7 +30,15 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
     .split(area);
     let now = Instant::now();
     render_header(frame, sections[0], app);
-    dashboard::render(frame, sections[1], app, now);
+    let content = sections[1];
+    if content.width >= sidebar::WIDTH + 56 {
+        let columns = Layout::horizontal([Constraint::Length(sidebar::WIDTH), Constraint::Min(1)])
+            .split(content);
+        sidebar::render(frame, columns[0], app);
+        dashboard::render(frame, columns[1], app, now);
+    } else {
+        dashboard::render(frame, content, app, now);
+    }
     render_footer(frame, sections[2], app, now);
 
     match &app.mode {
@@ -52,8 +62,13 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
             format!("  {}  ", app.board.name),
             Style::default().fg(app.theme.text),
         ),
+        Span::styled(
+            format!(" [{}] ", app.view_mode.label()),
+            Style::default().fg(app.theme.accent_alt),
+        ),
     ]);
-    let right_text = if app.search_active || !app.search_query.is_empty() {
+    let searching = app.search_active;
+    let right_text = if searching || !app.search_query.is_empty() {
         format!(" / {}", app.search_query)
     } else {
         format!("  {}  ", app.status_text())
@@ -63,21 +78,38 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
         SaveState::Dirty => app.theme.warning,
         SaveState::Clean => app.theme.muted,
     };
-    let right = Line::from(Span::styled(right_text, Style::default().fg(right_color)))
-        .alignment(Alignment::Right);
-    let columns = Layout::horizontal([Constraint::Min(1), Constraint::Length(24)]).split(area);
+    let right = Line::from(Span::styled(right_text, Style::default().fg(right_color))).alignment(
+        if searching {
+            Alignment::Left
+        } else {
+            Alignment::Right
+        },
+    );
+    let columns = Layout::horizontal([Constraint::Min(1), Constraint::Length(32)]).split(area);
     frame.render_widget(Paragraph::new(left), columns[0]);
     frame.render_widget(Paragraph::new(right), columns[1]);
+    if searching && columns[1].width > 0 {
+        let cursor = app.search_input.cursor.min(app.search_input.value.len());
+        let prefix = format!(" /{}", &app.search_input.value[..cursor]);
+        let offset = Line::from(prefix)
+            .width()
+            .min(columns[1].width.saturating_sub(1) as usize) as u16;
+        frame.set_cursor_position((columns[1].x.saturating_add(offset), columns[1].y));
+    }
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
     let hints = match &app.mode {
-        Mode::Dashboard if app.search_active => "type to search  •  enter search  •  esc close",
-        Mode::Dashboard => {
-            "hjkl move  •  n new  •  e edit  •  d delete  •  H/L move card  •  ? help"
+        Mode::Dashboard if app.search_active => "type to search  •  enter search  •  esc clear",
+        Mode::Dashboard if app.focus == crate::app::FocusRegion::Rail => {
+            "tab cards  •  h/l column  •  enter focus  •  v view  •  ? help"
         }
+        Mode::Dashboard if app.view_mode == crate::app::ViewMode::AllTasks => {
+            "tab rail  •  v view  •  j/k cards  •  h/l column  •  n new  •  ? help"
+        }
+        Mode::Dashboard => "tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •  ? help",
         Mode::Editor(_) => "tab switch  •  enter save  •  esc cancel",
-        Mode::Detail(_) => "e edit  •  d delete  •  esc close",
+        Mode::Detail(_) => "e edit  •  H/L move  •  PgUp/PgDn scroll  •  esc close",
         Mode::Help => "any key close",
         Mode::ConfirmDelete(_) => "y confirm  •  n cancel",
     };
@@ -130,7 +162,12 @@ pub(crate) fn truncate_text(text: &str, max_width: usize) -> String {
     let limit = max_width - 1;
     let mut result = String::new();
     for character in text.chars() {
-        if result.chars().count() == limit {
+        let character_width = Line::from(character.to_string()).width();
+        if Line::from(result.clone())
+            .width()
+            .saturating_add(character_width)
+            > limit
+        {
             result.push('…');
             break;
         }
@@ -181,7 +218,7 @@ pub(crate) fn field_label(app: &App, _label: &str, active: bool) -> Style {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::App;
+    use crate::app::{App, Mode, ViewMode};
     use crate::storage::JsonStore;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -211,5 +248,57 @@ mod tests {
         assert!(rendered.contains("TUI KANBAN"));
         assert!(rendered.contains("Write docs"));
         assert!(rendered.contains("Backlog"));
+    }
+
+    #[test]
+    fn all_tasks_renders_cards_and_rail() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = JsonStore::new(directory.path().join("board.json"));
+        let mut app = App::new(store, false).unwrap();
+        app.board
+            .add_task(0, "Shape cards", "Make scanning easier")
+            .unwrap();
+        app.board
+            .add_task(1, "Tune navigation", "Rail and focus")
+            .unwrap();
+        app.view_mode = ViewMode::AllTasks;
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(rendered.contains("ALL TASKS"));
+        assert!(rendered.contains("COLUMNS"));
+        assert!(rendered.contains("Shape cards"));
+        assert!(rendered.contains("Tune navigation"));
+    }
+
+    #[test]
+    fn detail_drawer_renders_metadata() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = JsonStore::new(directory.path().join("board.json"));
+        let mut app = App::new(store, false).unwrap();
+        let id = app
+            .board
+            .add_task(0, "Inspect me", "A useful description")
+            .unwrap();
+        app.mode = Mode::Detail(id);
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(rendered.contains("Task details"));
+        assert!(rendered.contains("created"));
+        assert!(rendered.contains("updated"));
+        assert!(rendered.contains("Inspect me"));
     }
 }

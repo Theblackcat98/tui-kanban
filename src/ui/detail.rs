@@ -1,3 +1,4 @@
+use super::cards;
 use super::{render_clear, short_id, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::App;
@@ -18,7 +19,7 @@ pub(crate) fn render(
     let full_width = if area.width < 56 {
         area.width
     } else {
-        (area.width * 2 / 5).clamp(32, 54)
+        (area.width * 2 / 5).clamp(32, 58)
     };
     let progress = app
         .animations
@@ -77,6 +78,7 @@ pub(crate) fn render(
         Constraint::Length(2),
         Constraint::Min(3),
         Constraint::Length(2),
+        Constraint::Length(2),
     ])
     .split(inner);
     frame.render_widget(
@@ -98,6 +100,7 @@ pub(crate) fn render(
         .style(surface_style(app)),
         sections[1],
     );
+
     let description = if task.description.trim().is_empty() {
         "No description".to_owned()
     } else {
@@ -113,15 +116,38 @@ pub(crate) fn render(
     frame.render_widget(
         Paragraph::new(description)
             .style(description_style)
-            .wrap(Wrap { trim: true }),
+            .wrap(Wrap { trim: true })
+            .scroll((app.detail_scroll, 0)),
         sections[2],
+    );
+
+    let metadata = vec![
+        Line::from(Span::styled(
+            format!(" created {}", cards::relative_time(task.created_at)),
+            Style::default().fg(app.theme.muted),
+        )),
+        Line::from(Span::styled(
+            format!(
+                " updated {}  •  id {}",
+                cards::relative_time(task.updated_at),
+                short_id(task.id)
+            ),
+            Style::default().fg(app.theme.muted),
+        )),
+    ];
+    frame.render_widget(
+        Paragraph::new(metadata)
+            .style(surface_style(app))
+            .wrap(Wrap { trim: true }),
+        sections[3],
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            " e edit  •  d delete  •  esc close",
+            " e edit  •  H/L move  •  d delete  •  esc close",
             Style::default().fg(app.theme.muted),
         )))
-        .style(surface_style(app)),
-        sections[3],
+        .style(surface_style(app))
+        .wrap(Wrap { trim: true }),
+        sections[4],
     );
 }

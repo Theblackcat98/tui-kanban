@@ -10,7 +10,7 @@ use std::time::Instant;
 
 pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
     let full_width = 58.min(area.width.saturating_sub(2));
-    let full_height = 19.min(area.height.saturating_sub(2));
+    let full_height = 23.min(area.height.saturating_sub(2));
     let progress = app
         .animations
         .progress(AnimationKind::Modal, now)
@@ -42,9 +42,12 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant)
                 .fg(app.theme.accent_alt)
                 .add_modifier(Modifier::BOLD),
         )),
+        Line::from("  v                toggle Board / All tasks"),
+        Line::from("  Tab              focus rail / cards"),
         Line::from("  h / l or ← / →   select column"),
         Line::from("  j / k or ↑ / ↓   select card"),
         Line::from("  H / L            move selected card"),
+        Line::from("  PageUp / PageDn  move by five cards"),
         Line::from(""),
         Line::from(Span::styled(
             "Tasks",
@@ -57,6 +60,15 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant)
         Line::from("  d                delete task"),
         Line::from("  Enter            open details"),
         Line::from("  /                search"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Details",
+            Style::default()
+                .fg(app.theme.accent_alt)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from("  PageUp / PageDn  scroll description"),
+        Line::from("  H / L            move task from drawer"),
         Line::from(""),
         Line::from(Span::styled(
             "General",
