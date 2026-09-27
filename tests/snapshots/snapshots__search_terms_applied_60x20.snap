@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ Snapshot Board   Board · All tasks
+ /  in:progress ×   updated:<1d ×   cmd ×            1 of 7
+
+ Backlog 0/3 · In Progress 1/2 · Done 0/2
+ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+ ▌ Command table
+ ▌ Every keybinding defined once.
+ ▌ ◷ 1h ago
+
+
+
+
+
+
+
+
+
+
+ BOARD   ● saved   Esc clear   j/k card   h/l column

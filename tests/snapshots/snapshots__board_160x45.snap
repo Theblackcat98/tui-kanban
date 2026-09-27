@@ -46,4 +46,4 @@ expression: "harness.screen(width, height)"
 
 
 
- BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n new   Enter open   e edit   H/L move   d delete   / search   ? help
+ BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n/N new   Enter open   e edit   H/L move   d delete   / search   ? help   : commands

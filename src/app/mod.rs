@@ -9,26 +9,36 @@
 //! ```
 
 mod action;
+mod editor;
 mod history;
 mod input;
 mod model;
+mod palette;
 mod update;
 
-pub use action::{Action, Effect, keymap};
+pub use action::{Action, Effect, ExternalTarget, keymap};
+pub use editor::{EditorField, EditorState, Placement};
 pub use history::History;
 pub use input::TextInput;
 pub use model::{
-    EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Scroll, Search, Session,
-    Toast, ToastKind, Ui, ViewMode, VisibleTask,
+    FocusRegion, Model, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind, Ui, ViewMode,
+    VisibleTask,
+};
+pub use palette::{
+    Entry as PaletteEntry, Palette, Target as PaletteTarget, entries as palette_entries,
 };
 pub use update::update;
 
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyEvent};
+use ratatui::crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEvent,
+};
+use ratatui::crossterm::execute;
 use std::collections::VecDeque;
 use std::env;
+use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -60,6 +70,11 @@ pub struct Cli {
 pub struct App {
     pub model: Model,
     pub store: JsonStore,
+    /// Created when the first-run tip is dismissed, so it stays dismissed.
+    /// Without one, the tip isn't shown.
+    tip_marker: Option<PathBuf>,
+    /// Text waiting to be edited in `$EDITOR`, which needs the terminal.
+    external_edit: Option<(String, ExternalTarget)>,
     quit: bool,
 }
 
@@ -71,8 +86,18 @@ impl App {
         Ok(Self {
             model: Model::new(board, theme, animations_enabled),
             store,
+            tip_marker: None,
+            external_edit: None,
             quit: false,
         })
+    }
+
+    /// Shows the first-run tip unless `marker` exists, and creates it when
+    /// the tip is dismissed.
+    pub fn with_tip_marker(mut self, marker: PathBuf) -> Self {
+        self.model.ui.tip = !marker.exists();
+        self.tip_marker = Some(marker);
+        self
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, clock: Clock) {
@@ -104,9 +129,27 @@ impl App {
                         queue.push_back(Action::SaveFinished(result));
                     }
                     Effect::Quit => self.quit = true,
+                    Effect::EditExternally { text, target } => {
+                        self.external_edit = Some((text, target));
+                    }
+                    Effect::DismissTip => {
+                        // Best effort: if this fails the tip shows again
+                        // next time, which is harmless.
+                        if let Some(marker) = &self.tip_marker {
+                            if let Some(parent) = marker.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let _ = std::fs::write(marker, "");
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// Text the runtime should open in `$EDITOR`, if any.
+    pub fn take_external_edit(&mut self) -> Option<(String, ExternalTarget)> {
+        self.external_edit.take()
     }
 
     pub fn should_quit(&self) -> bool {
@@ -135,6 +178,13 @@ impl App {
         if let Some(frame) = self.model.ui.animations.next_frame_timeout(now) {
             timeout = timeout.min(frame);
         }
+        // Wake when a held prefix should show its which-key panel.
+        if let Some(pending) = self.model.ui.pending {
+            let due = pending.since + crate::ui::WHICH_KEY_DELAY;
+            if due > now {
+                timeout = timeout.min(due - now);
+            }
+        }
         if let Some(expires_at) = self
             .model
             .session
@@ -158,13 +208,43 @@ pub fn run() -> Result<()> {
         theme::detect_light_background,
     )?;
     let mut app = App::new(store, theme, animations)?;
-    let mut terminal = ratatui::try_init().context("could not initialize terminal")?;
+    if let Some(state) = crate::paths::state_dir() {
+        app = app.with_tip_marker(state.join("tip-dismissed"));
+    }
+    let mut terminal = init_terminal()?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);
     }
     let result = run_loop(&mut terminal, &mut app);
-    let restore_result = ratatui::try_restore().context("could not restore terminal");
+    let restore_result = restore_terminal();
     result.and(restore_result).and(app.finish())
+}
+
+/// Enters the alternate screen and raw mode, with bracketed paste so a
+/// multi-line paste arrives as one piece of text rather than as keys.
+fn init_terminal() -> Result<DefaultTerminal> {
+    let terminal = ratatui::try_init().context("could not initialize terminal")?;
+    // Terminals without bracketed paste ignore the request.
+    let _ = execute!(io::stdout(), EnableBracketedPaste);
+    Ok(terminal)
+}
+
+/// Leaves the TUI while the user edits `text` in their own editor, then
+/// comes back to it.
+fn edit_externally(
+    terminal: &mut DefaultTerminal,
+    text: &str,
+) -> Result<std::result::Result<String, String>> {
+    restore_terminal()?;
+    let result = crate::tui::external::edit(text);
+    *terminal = init_terminal()?;
+    terminal.clear()?;
+    Ok(result)
+}
+
+fn restore_terminal() -> Result<()> {
+    let _ = execute!(io::stdout(), DisableBracketedPaste);
+    ratatui::try_restore().context("could not restore terminal")
 }
 
 fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
@@ -187,6 +267,17 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             match event::read()? {
                 Event::Key(key) => {
                     app.handle_key(key, Clock::now());
+                    if let Some((text, target)) = app.take_external_edit() {
+                        let result = edit_externally(terminal, &text)?;
+                        app.dispatch(
+                            Action::ExternalEditFinished { target, result },
+                            Clock::now(),
+                        );
+                    }
+                    needs_redraw = true;
+                }
+                Event::Paste(text) => {
+                    app.dispatch(Action::Paste(text), Clock::now());
                     needs_redraw = true;
                 }
                 Event::Resize(width, height) => {
@@ -314,12 +405,141 @@ mod tests {
         press(&mut app, &[KeyCode::Char('n')]);
         type_text(&mut app, "Ship it");
         press(&mut app, &[KeyCode::Tab]);
-        type_text(&mut app, "Make it beautiful");
+        type_text(&mut app, "Make it");
+        // #22: Enter starts a new line in the description; Ctrl+S saves.
         press(&mut app, &[KeyCode::Enter]);
+        type_text(&mut app, "beautiful");
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            clock(),
+        );
         assert_eq!(app.model.board.task_count(), 1);
         assert_eq!(app.model.board.columns[0].tasks[0].title, "Ship it");
+        assert_eq!(
+            app.model.board.columns[0].tasks[0].description,
+            "Make it\nbeautiful"
+        );
         assert!(app.model.ui.screens.is_empty());
         assert_eq!(app.store.load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn pasting_inserts_text_where_the_user_is_typing() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('n')]);
+        app.dispatch(Action::Paste("Two\nlines".to_owned()), clock());
+        press(&mut app, &[KeyCode::Tab]);
+        app.dispatch(Action::Paste("Line one\r\nLine two".to_owned()), clock());
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::BackTab, KeyCode::Enter],
+        );
+        let task = &app.model.board.columns[0].tasks[0];
+        assert_eq!(task.title, "Two lines");
+        assert_eq!(task.description, "Line one\nLine two");
+        press(&mut app, &[KeyCode::Char('/')]);
+        app.dispatch(Action::Paste("two".to_owned()), clock());
+        assert_eq!(app.model.ui.search.query, "two");
+    }
+
+    #[test]
+    fn cancelling_a_changed_draft_asks_first() {
+        // #23: Esc and Ctrl+C used to throw a draft away without asking.
+        let (_directory, mut app) = test_app();
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        // An untouched draft closes straight away.
+        press(&mut app, &[KeyCode::Char('n'), KeyCode::Esc]);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Half-written");
+        app.handle_key(ctrl_c, clock());
+        assert!(!app.should_quit());
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmDiscard)));
+        // n keeps editing, with the draft intact.
+        press(&mut app, &[KeyCode::Char('n')]);
+        match top_screen(&app) {
+            Some(Screen::Editor(editor)) => assert_eq!(editor.title_text(), "Half-written"),
+            other => panic!("expected the editor, got {other:?}"),
+        }
+        press(&mut app, &[KeyCode::Esc, KeyCode::Char('y')]);
+        assert!(app.model.ui.screens.is_empty());
+        assert_eq!(app.model.board.task_count(), 0);
+    }
+
+    #[test]
+    fn descriptions_can_be_edited_in_an_external_editor() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Write it up");
+        press(&mut app, &[KeyCode::Char('E')]);
+        let (text, target) = app.take_external_edit().expect("an edit request");
+        assert_eq!((text.as_str(), target), ("", ExternalTarget::Task(id)));
+        let finished = |result| Action::ExternalEditFinished { target, result };
+        app.dispatch(finished(Ok("# Plan\n\n- [ ] draft\n".to_owned())), clock());
+        assert_eq!(
+            app.model.board.task(id).unwrap().description,
+            "# Plan\n\n- [ ] draft"
+        );
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task(id).unwrap().description, "");
+        app.dispatch(finished(Err("vi exited with 1".to_owned())), clock());
+        assert_eq!(toast_message(&app), "Editor: vi exited with 1");
+
+        // From the editor overlay, the text goes back into the draft.
+        press(&mut app, &[KeyCode::Char('e')]);
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        let (_, target) = app.take_external_edit().expect("an edit request");
+        assert_eq!(target, ExternalTarget::Draft);
+        app.dispatch(
+            Action::ExternalEditFinished {
+                target,
+                result: Ok("From vim".to_owned()),
+            },
+            clock(),
+        );
+        match top_screen(&app) {
+            Some(Screen::Editor(editor)) => {
+                assert_eq!(editor.description_text(), "From vim");
+                assert_eq!(editor.field, EditorField::Description);
+            }
+            other => panic!("expected the editor, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn space_ticks_checklist_items_in_the_drawer() {
+        let (_directory, mut app) = test_app();
+        let id = app
+            .model
+            .board
+            .add_task(
+                0,
+                "Release",
+                "Steps:\n- [ ] tag\n- [ ] build\n- [x] notes",
+                0,
+            )
+            .unwrap();
+        app.model.reconcile_selection();
+        let description = |app: &App| app.model.board.task(id).unwrap().description.clone();
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char(' ')]);
+        assert!(description(&app).contains("- [x] tag"));
+        assert_eq!(toast_message(&app), "");
+        press(&mut app, &[KeyCode::Tab, KeyCode::Char(' ')]);
+        assert_eq!(crate::markdown::progress(&description(&app)), Some((3, 3)));
+        // Shift+Tab wraps around to the last item.
+        press(
+            &mut app,
+            &[KeyCode::BackTab, KeyCode::BackTab, KeyCode::Char(' ')],
+        );
+        assert!(description(&app).contains("- [ ] notes"));
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert!(description(&app).contains("- [x] notes"));
+        assert_eq!(
+            toast_message(&app),
+            "Undid: tick 'notes'".replace("tick", "untick")
+        );
     }
 
     #[test]
@@ -347,6 +567,48 @@ mod tests {
         assert_eq!(app.model.ui.search.query, "");
         assert_eq!(app.model.visible_task_indices(0), vec![0, 1]);
         assert!(!app.model.ui.search.is_typing());
+    }
+
+    #[test]
+    fn arrows_move_through_matches_while_typing() {
+        // #28: ↑/↓ and Ctrl+N/Ctrl+P used to do nothing until Enter.
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "Fix the login bug");
+        add(&mut app, 0, "Write docs");
+        let second = add(&mut app, 2, "Fix typo");
+        press(&mut app, &[KeyCode::Char('/')]);
+        type_text(&mut app, "fix");
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        press(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        assert_eq!(app.model.ui.active_column, 2);
+        assert!(app.model.ui.search.is_typing());
+        // It wraps around.
+        press(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        // After applying, Ctrl+N / Ctrl+P do the same.
+        press(&mut app, &[KeyCode::Enter]);
+        let ctrl = |character| KeyEvent::new(KeyCode::Char(character), KeyModifiers::CONTROL);
+        app.handle_key(ctrl('p'), clock());
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        app.handle_key(ctrl('n'), clock());
+        assert_eq!(app.model.selected_task_id(), Some(first));
+    }
+
+    #[test]
+    fn backspace_removes_the_last_filter_term() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Fix the login bug");
+        add(&mut app, 1, "Fix typo");
+        press(&mut app, &[KeyCode::Char('/')]);
+        type_text(&mut app, "in:backlog fix");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.visible_tasks().len(), 1);
+        press(&mut app, &[KeyCode::Backspace]);
+        assert_eq!(app.model.ui.search.query, "in:backlog");
+        press(&mut app, &[KeyCode::Backspace]);
+        assert_eq!(app.model.ui.search.query, "");
+        assert_eq!(app.model.visible_tasks().len(), 2);
     }
 
     #[test]
@@ -400,8 +662,36 @@ mod tests {
         press(&mut app, &[KeyCode::Enter]);
         assert_eq!(app.model.selected_task_id(), Some(first));
         assert_eq!(app.model.ui.active_column, 1);
-        press(&mut app, &[KeyCode::Down]);
+        // Both matches share a row of the grid.
+        press(&mut app, &[KeyCode::Right]);
         assert_eq!(app.model.selected_task_id(), Some(second));
+    }
+
+    #[test]
+    fn all_tasks_grid_moves_spatially() {
+        // #27: j/k move by row keeping the position in the row, h/l move
+        // within the row, and [ / ] jump between column groups.
+        let (_directory, mut app) = test_app();
+        app.resize(160, 45);
+        let first: Vec<Uuid> = (0..5).map(|n| add(&mut app, 0, &format!("a{n}"))).collect();
+        let second: Vec<Uuid> = (0..2).map(|n| add(&mut app, 1, &format!("b{n}"))).collect();
+        // Rows of three: [a0 a1 a2] [a3 a4] [b0 b1].
+        press(&mut app, &[KeyCode::Char('v'), KeyCode::Char('l')]);
+        assert_eq!(app.model.selected_task_id(), Some(first[1]));
+        let steps = [
+            ('j', first[4]),
+            ('j', second[1]),
+            ('k', first[4]),
+            ('l', first[4]),
+            ('h', first[3]),
+            ('k', first[0]),
+            (']', second[0]),
+            ('[', first[0]),
+        ];
+        for (key, expected) in steps {
+            press(&mut app, &[KeyCode::Char(key)]);
+            assert_eq!(app.model.selected_task_id(), Some(expected), "after {key}");
+        }
     }
 
     #[test]
@@ -537,6 +827,8 @@ mod tests {
         let mut app = App {
             model: Model::new(Default::default(), Theme::mocha(), false),
             store,
+            tip_marker: None,
+            external_edit: None,
             quit: false,
         };
         app.resize(100, 30);
@@ -722,6 +1014,296 @@ mod tests {
         assert_eq!(app.model.board.task_count(), 0);
         press(&mut app, &[KeyCode::Char('u')]);
         assert_eq!(toast_message(&app), "Nothing to undo");
+    }
+
+    fn titles(app: &App, column: usize) -> Vec<&str> {
+        app.model.board.columns[column]
+            .tasks
+            .iter()
+            .map(|task| task.title.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn digits_and_g_jump_between_lanes_and_cards() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "First");
+        add(&mut app, 0, "Middle");
+        let last = add(&mut app, 0, "Last");
+        let done = add(&mut app, 2, "Shipped");
+        press(&mut app, &[KeyCode::Char('3')]);
+        assert_eq!(app.model.ui.active_column, 2);
+        assert_eq!(app.model.selected_task_id(), Some(done));
+        // A lane that doesn't exist does nothing.
+        press(&mut app, &[KeyCode::Char('9')]);
+        assert_eq!(app.model.ui.active_column, 2);
+        // g + a lane's initial, in any case.
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('b')]);
+        assert_eq!(app.model.ui.active_column, 0);
+        press(&mut app, &[KeyCode::Char('G')]);
+        assert_eq!(app.model.selected_task_id(), Some(last));
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('g')]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        assert!(app.model.ui.pending.is_none());
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('I')]);
+        assert_eq!(app.model.ui.active_column, 1);
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('x')]);
+        assert_eq!(toast_message(&app), "No lane starts with \"x\"");
+        // Esc cancels a prefix without doing anything else.
+        press(
+            &mut app,
+            &[KeyCode::Char('g'), KeyCode::Esc, KeyCode::Char('j')],
+        );
+        assert!(app.model.ui.pending.is_none());
+    }
+
+    #[test]
+    fn new_tasks_go_below_or_above_the_selection() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "One");
+        add(&mut app, 0, "Two");
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Below one");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char('N')]);
+        type_text(&mut app, "Above below one");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(
+            titles(&app, 0),
+            ["One", "Above below one", "Below one", "Two"]
+        );
+        // In an empty lane, N adds at the top and n at the end.
+        press(&mut app, &[KeyCode::Char('l'), KeyCode::Char('n')]);
+        type_text(&mut app, "Only");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(titles(&app, 1), ["Only"]);
+    }
+
+    #[test]
+    fn shift_j_and_k_reorder_within_the_lane() {
+        let (_directory, mut app) = test_app();
+        let one = add(&mut app, 0, "One");
+        add(&mut app, 0, "Two");
+        add(&mut app, 0, "Three");
+        press(&mut app, &[KeyCode::Char('J'), KeyCode::Char('J')]);
+        assert_eq!(titles(&app, 0), ["Two", "Three", "One"]);
+        assert_eq!(app.model.selected_task_id(), Some(one));
+        // At the end of the lane it stays put.
+        press(&mut app, &[KeyCode::Char('J')]);
+        assert_eq!(titles(&app, 0), ["Two", "Three", "One"]);
+        press(&mut app, &[KeyCode::Char('K')]);
+        assert_eq!(titles(&app, 0), ["Two", "One", "Three"]);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(titles(&app, 0), ["Two", "Three", "One"]);
+    }
+
+    #[test]
+    fn move_to_menu_moves_a_task_to_any_lane() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Travel");
+        press(&mut app, &[KeyCode::Char('m')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::MoveTo { selected: 0, .. })
+        ));
+        press(
+            &mut app,
+            &[KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Enter],
+        );
+        assert_eq!(app.model.board.task_location(id), Some((2, 0)));
+        assert!(app.model.ui.screens.is_empty());
+        // A digit picks directly, and q closes without moving.
+        press(&mut app, &[KeyCode::Char('m'), KeyCode::Char('2')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        press(&mut app, &[KeyCode::Char('m'), KeyCode::Char('q')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn quick_add_stays_open_for_the_next_task() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 1, "Existing");
+        press(&mut app, &[KeyCode::Char('l'), KeyCode::Char('a')]);
+        type_text(&mut app, "First");
+        press(&mut app, &[KeyCode::Enter]);
+        type_text(&mut app, "Second");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(matches!(top_screen(&app), Some(Screen::QuickAdd { .. })));
+        assert_eq!(titles(&app, 1), ["Existing", "First", "Second"]);
+        // Enter on an empty prompt closes it, as do Esc and Ctrl+C.
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('a')]);
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.should_quit());
+    }
+
+    #[test]
+    fn duplicate_copies_below_and_can_be_undone() {
+        let (_directory, mut app) = test_app();
+        let original = add(&mut app, 0, "Template");
+        add(&mut app, 0, "Other");
+        press(&mut app, &[KeyCode::Char('y')]);
+        assert_eq!(titles(&app, 0), ["Template", "Template", "Other"]);
+        let copy = app.model.board.columns[0].tasks[1].id;
+        assert_ne!(copy, original);
+        assert_eq!(app.model.selected_task_id(), Some(copy));
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(titles(&app, 0), ["Template", "Other"]);
+    }
+
+    #[test]
+    fn escape_goes_back_and_q_closes_overlays() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Task");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char('q')]);
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.should_quit());
+        press(&mut app, &[KeyCode::Tab, KeyCode::Esc]);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+        press(&mut app, &[KeyCode::Esc, KeyCode::Esc]);
+        assert!(!app.should_quit());
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(app.should_quit());
+    }
+
+    #[test]
+    fn help_lists_the_keys_for_the_screen_it_opened_from() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Task");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char('?')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Help {
+                context: crate::command::Context::Detail,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn the_tip_stays_dismissed() {
+        let (directory, app) = test_app();
+        let marker = directory.path().join("state").join("tip-dismissed");
+        let mut app = app.with_tip_marker(marker.clone());
+        assert!(app.model.ui.tip);
+        press(&mut app, &[KeyCode::Esc]);
+        assert!(!app.model.ui.tip);
+        assert!(marker.exists());
+        let store = JsonStore::new(directory.path().join("board.json"));
+        let app = App::new(store, Theme::mocha(), false)
+            .unwrap()
+            .with_tip_marker(marker);
+        assert!(!app.model.ui.tip);
+    }
+
+    fn palette_labels(app: &App) -> Vec<String> {
+        match top_screen(app) {
+            Some(Screen::Palette(palette)) => palette_entries(&app.model, palette)
+                .into_iter()
+                .map(|entry| entry.label)
+                .collect(),
+            other => panic!("expected the palette, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_palette_runs_commands_and_remembers_them() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Travel");
+        press(&mut app, &[KeyCode::Char(':')]);
+        type_text(&mut app, "move to");
+        assert_eq!(palette_labels(&app)[0], "Move to…");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(matches!(top_screen(&app), Some(Screen::MoveTo { task, .. }) if *task == id));
+        press(&mut app, &[KeyCode::Esc]);
+        // Ctrl+K opens it too, with the command just used first.
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert_eq!(palette_labels(&app)[0], "Move to…");
+        // Ctrl+C closes it without quitting.
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.should_quit());
+    }
+
+    #[test]
+    fn the_palette_goes_to_lanes_and_tasks() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Alpha");
+        let hidden = add(&mut app, 2, "Needle in the haystack");
+        // A search that hides the task is cleared to show it.
+        press(&mut app, &[KeyCode::Char('/')]);
+        type_text(&mut app, "alpha");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char(':')]);
+        type_text(&mut app, "needle");
+        assert_eq!(
+            palette_labels(&app)[0],
+            "Go to task: Needle in the haystack"
+        );
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.selected_task_id(), Some(hidden));
+        assert!(!app.model.ui.search.is_active());
+        press(&mut app, &[KeyCode::Char(':')]);
+        type_text(&mut app, "lane in progress");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.ui.active_column, 1);
+        // ↓ / ↑ move through the entries, wrapping around.
+        press(&mut app, &[KeyCode::Char(':'), KeyCode::Up]);
+        match top_screen(&app) {
+            Some(Screen::Palette(palette)) => {
+                let count = palette_entries(&app.model, palette).len();
+                assert_eq!(palette.selected, count - 1);
+            }
+            other => panic!("expected the palette, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn space_passes_the_next_key_through() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char(' ')]);
+        assert!(app.model.ui.pending.is_some());
+        press(&mut app, &[KeyCode::Char('n')]);
+        assert!(matches!(top_screen(&app), Some(Screen::Editor(_))));
+        press(&mut app, &[KeyCode::Esc, KeyCode::Char(' '), KeyCode::Esc]);
+        assert!(app.model.ui.pending.is_none());
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn stray_keys_do_nothing_harmful() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 1, "Only task");
+        // Backspace with no search doesn't move the selection.
+        press(&mut app, &[KeyCode::Char('h'), KeyCode::Backspace]);
+        assert_eq!(app.model.ui.active_column, 0);
+        // A prefix left pending when the terminal shrinks does nothing.
+        press(&mut app, &[KeyCode::Char('g')]);
+        app.resize(30, 8);
+        press(&mut app, &[KeyCode::Char('i')]);
+        assert_eq!(app.model.ui.active_column, 0);
+        app.resize(100, 30);
+        press(&mut app, &[KeyCode::Char('2')]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+    }
+
+    #[test]
+    fn a_held_prefix_wakes_the_loop_for_which_key() {
+        let (_directory, mut app) = test_app();
+        let clock = clock();
+        app.handle_key(key(KeyCode::Char('g')), clock);
+        let timeout = app.next_timeout(clock.instant);
+        assert!(timeout <= crate::ui::WHICH_KEY_DELAY && timeout > Duration::ZERO);
     }
 
     #[test]

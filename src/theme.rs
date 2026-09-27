@@ -8,7 +8,7 @@
 
 use std::env;
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context as _, Result, bail};
 use ratatui::style::{Color, Modifier};
@@ -572,20 +572,9 @@ impl Environment {
                 env::var_os("COLORTERM").as_deref(),
                 env::var_os("TERM").as_deref(),
             ),
-            themes_dir: config_dir().map(|dir| dir.join("tui-kanban").join("themes")),
+            themes_dir: crate::paths::config_dir().map(|dir| dir.join("tui-kanban").join("themes")),
         }
     }
-}
-
-fn config_dir() -> Option<PathBuf> {
-    let non_empty = |name: &str| env::var_os(name).filter(|value| !value.is_empty());
-    if let Some(dir) = non_empty("XDG_CONFIG_HOME") {
-        return Some(PathBuf::from(dir));
-    }
-    if cfg!(windows) {
-        return non_empty("APPDATA").map(PathBuf::from);
-    }
-    non_empty("HOME").map(|home| Path::new(&home).join(".config"))
 }
 
 /// Picks the theme for a `--theme` value (`auto` when not given):

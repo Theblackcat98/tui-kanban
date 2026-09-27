@@ -2,14 +2,19 @@
 source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
- Snapshot Board   Board · All tasks                                                  / ca · 1 match
+ Snapshot Board   Board · All tasks
+ /  ca ×  Backspace removes the last term                                                    2 of 7
 
-  Columns              Backlog  0/3              In Progress  1/2          Done  0/2
+  Columns              Backlog  0/3              In Progress  2/2          Done  0/2
                        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
- ▌ Backlog       0/3
-   In Progress   1/2   No matches                ▎ Calmer card style       No matches
-   Done          0/2                             ▎ Tiles with an accent…
-                                                 ▎ ◷ 12m ago
+   Backlog       0/3
+ ▌ In Progress   2/2   No matches                ▌ Calmer card style       No matches
+   Done          0/2                             ▌ Tiles with an accent…
+                                                 ▌ ◷ 12m ago
+
+                                                 ▎ Command table
+                                                 ▎ Every keybinding def…
+                                                 ▎ ◷ 1h ago
 
 
 
@@ -26,9 +31,4 @@ expression: "harness.screen(100, 30)"
 
 
 
-
-
-
-
-
- BOARD   ● saved   Esc clear   Tab rail   j/k card   h/l column   v view   n new   / search
+ BOARD   ● saved   Esc clear   Tab rail   j/k card   h/l column   v view   n/N new   Enter open

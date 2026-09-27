@@ -460,8 +460,12 @@ fn keys_create_a_task_and_move_it() {
         .keys(&[KeyCode::Char('n')])
         .type_text("Ship it")
         .keys(&[KeyCode::Tab])
-        .type_text("Before Friday")
-        .keys(&[KeyCode::Enter, KeyCode::Char('L')]);
+        .type_text("Before Friday");
+    harness.app.handle_key(
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+        clock(),
+    );
+    harness.keys(&[KeyCode::Char('L')]);
 
     let board = &harness.app.model.board;
     assert_eq!(board.task_count(), 8);
@@ -488,4 +492,133 @@ fn keys_delete_after_confirmation() {
         .collect();
     assert_eq!(titles, ["Write the README", "Package release binaries"]);
     screen_snapshot!("keys_delete_100x30", harness, 100, 30);
+}
+
+// Navigation (#45)
+
+#[test]
+fn move_to_menu() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char('m'), KeyCode::Char('j')]);
+    screen_snapshot!("move_to_100x30", harness, 100, 30);
+}
+
+#[test]
+fn quick_add_prompt() {
+    let mut harness = Harness::new(typical_board());
+    harness
+        .keys(&[KeyCode::Char('l'), KeyCode::Char('a')])
+        .type_text("Review the diff");
+    screen_snapshot!("quick_add_100x30", harness, 100, 30);
+}
+
+#[test]
+fn first_run_tip() {
+    let mut harness = Harness::new(typical_board());
+    harness.app.model.ui.tip = true;
+    screen_snapshot!("tip_100x30", harness, 100, 30);
+    screen_snapshot!("tip_60x20", harness, 60, 20);
+}
+
+#[test]
+fn help_for_the_detail_drawer() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Enter, KeyCode::Char('?')]);
+    screen_snapshot!("help_detail_100x30", harness, 100, 30);
+}
+
+#[test]
+fn discard_confirmation() {
+    let mut harness = Harness::new(typical_board());
+    harness
+        .keys(&[KeyCode::Char('e'), KeyCode::End])
+        .type_text(" now")
+        .keys(&[KeyCode::Esc]);
+    screen_snapshot!("confirm_discard_100x30", harness, 100, 30);
+}
+
+#[test]
+fn markdown_description_with_a_checklist() {
+    let mut board = typical_board();
+    board.columns[0].tasks[0].description = "## Before the release\n\
+        Write it for **new users** first, then *everyone*.\n\n\
+        - [x] Install with `cargo install`\n\
+        - [ ] Usage, with a recorded demo that shows the board and the palette\n\
+        - [ ] Keys\n\n\
+        > Keep it short.\n\n\
+        ```\ncargo run -- --board demo.json\n```"
+        .to_owned();
+    let mut harness = Harness::new(board);
+    screen_snapshot!("markdown_card_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Enter, KeyCode::Tab]);
+    screen_snapshot!("markdown_detail_100x30", harness, 100, 30);
+}
+
+// Search (#47, #28)
+
+#[test]
+fn search_with_filter_terms() {
+    let mut harness = Harness::new(typical_board());
+    harness
+        .keys(&[KeyCode::Char('/')])
+        .type_text("in:progress updated:<1d cmd");
+    screen_snapshot!("search_terms_typing_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Enter]);
+    screen_snapshot!("search_terms_applied_100x30", harness, 100, 30);
+    screen_snapshot!("search_terms_applied_60x20", harness, 60, 20);
+}
+
+#[test]
+fn search_highlights_matched_characters() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char('/')]).type_text("rdme");
+    let buffer = harness.render(100, 30);
+    let accent = harness.app.model.ui.theme.accent;
+    // "Write the README" in the first lane: R, M and E are matched.
+    let row: String = (0..100)
+        .map(|x| buffer[(x, 6)].symbol().to_owned())
+        .collect();
+    let byte = row.find("Write the README").expect("the card is shown");
+    let start = row[..byte].chars().count() as u16;
+    let colours: Vec<bool> = (0..16)
+        .map(|x| buffer[(start + x, 6)].fg == accent)
+        .collect();
+    let expected: Vec<bool> = "Write the README"
+        .chars()
+        .enumerate()
+        .map(|(index, _)| [10, 13, 14, 15].contains(&index))
+        .collect();
+    assert_eq!(colours, expected, "{row}");
+}
+
+// Command palette and which-key (#46)
+
+#[test]
+fn command_palette() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char(':')]);
+    screen_snapshot!("palette_100x30", harness, 100, 30);
+    harness.type_text("snap");
+    screen_snapshot!("palette_query_100x30", harness, 100, 30);
+    screen_snapshot!("palette_query_60x20", harness, 60, 20);
+}
+
+#[test]
+fn which_key_panels() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char(' ')]);
+    screen_snapshot!("which_key_space_100x30", harness, 100, 30);
+    screen_snapshot!("which_key_space_60x20", harness, 60, 20);
+    harness.keys(&[KeyCode::Esc, KeyCode::Char('g')]);
+    // Not straight away, so typing g g quickly doesn't flash it up.
+    assert!(!harness.screen(100, 30).contains("first card"));
+    let later = clock().advance(Duration::from_millis(400));
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| tui_kanban::ui::render(frame, &harness.app.model, later))
+        .unwrap();
+    insta::assert_snapshot!(
+        "which_key_g_100x30",
+        buffer_text(terminal.backend().buffer())
+    );
 }

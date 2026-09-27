@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ Snapshot Board   Board · All tasks
+                                                            ▎
+  Columns             ╭ Keys · Details ──────────────────────────────────────╮E
+                      │ Tasks                                                │
+ ▌ Backlog         3  │   e                   edit task                      │0000
+   In Progress     2  │   y                   duplicate task                 │· created Aug 27
+   Done            2  │   m                   move to…                       │
+                      │   E                   edit description in $EDITOR    │usage, keys and the
+                      │   d                   delete task                    │
+                      │   H/L                 move task left / right         │
+                      │   J/K                 move task down / up            │
+                      │   u/U  Ctrl+Z/Ctrl+R  undo / redo                    │
+                      │                                                      │
+                      │ Details                                              │
+                      │   PgUp/PgDn           scroll up / down a page        │
+                      │   j/k  ↓/↑            scroll down / up a line        │
+                      │   Space               tick / untick checklist item   │
+                      │   Tab/Shift+Tab       next / previous checklist item │
+                      │   Esc / q             close details                  │
+                      │                                                      │
+                      │ General                                              │
+                      │   ?                   this help                      │
+                      │   : / Ctrl+K          command palette                │
+                      │   Ctrl+C              quit (anywhere)                │
+                      │                                                      │
+                      │ j/k scroll   Esc close                               │
+                      ╰──────────────────────────────────────────────────────╯
+                                                            ▎
+                                                            ▎
+ HELP   ● saved   j/k scroll   Esc close

@@ -84,9 +84,23 @@ Below 40×12 the app shows a "terminal too small" screen and only quits.
 ### Top bar
 
 `Board name   Board · All tasks` on the left, with the current view in
-the accent colour. While searching, the search box sits on the right
-and grows with the query; an applied filter shows as `/ query · N
-matches`.
+the accent colour.
+
+### Filter bar
+
+While a search is active, a row below the top bar holds it, with the
+match count on the right (`3 of 12`). While typing it is the search box,
+across the whole row; once applied (Enter), each term is a chip
+(`in:progress ×`) and Backspace removes the last one.
+
+Text matches a title fuzzily (letters in order, ignoring case and
+accents) or a description as written; `in:column`, `#tag`,
+`updated:<7d` / `>2w` / `today` and `created:…` filter by column,
+hashtag and time, and fzf's `'exact`, `^prefix`, `suffix$` and `!not`
+work too. The matched letters are highlighted on cards in bold
+`accent` (bold and underlined without colour). While typing, ↓/↑ (or
+Ctrl+N/Ctrl+P) move through the matches across all lanes; after
+applying, Ctrl+N/Ctrl+P do.
 
 ### Status line
 
@@ -125,10 +139,12 @@ Backlog  3
 
 - A tile on `surface`, with a `▎` bar in the lane's accent.
 - Title: bold, wrapped to at most two lines, ending in `…` if cut.
-- Description: its first non-empty line in `text_muted`, cut with `…`.
-  Left out when empty.
+- Description: its first line with content in `text_muted`, without
+  its Markdown (`- [ ] tag` reads `☐ tag`), cut with `…`. Left out when
+  empty.
 - Metadata: `◷ 5m ago` in `text_faint`; dates older than a week read
-  `Sep 3`.
+  `Sep 3`. A description with a checklist adds `✓ 2/5`, in `success`
+  once every item is ticked.
 - Height fits the content: two to four rows.
 - **Selected** (and the cards have focus): the tile turns `selection`
   and the bar becomes a bolder `▌`.
@@ -143,23 +159,97 @@ focus, the active entry is on `selection`.
 
 On `panel`, with an accent edge. The title wraps in full (up to a third
 of the height); two lines of metadata follow (`Backlog · #1a2b3c4d`,
-then `updated 2d ago · created Sep 3`), then the description with its
-line breaks and indentation kept, scrollable (j/k a line, PgUp/PgDn a
-page, stopping at the end) and with a scrollbar when it overflows. Its
-hints are in the status line.
+then `updated 2d ago · created Sep 3`), then the description as
+lightweight Markdown, scrollable (j/k a line, PgUp/PgDn a page, stopping
+at the end) and with a scrollbar when it overflows. Its hints are in the
+status line.
+
+The Markdown is line by line: `#` headings in bold `accent`; `•` bullets,
+numbered lists and `☐` / `☑` checklist items, with wrapped lines hanging
+under their text; `│` quotes in italic; fenced code on `surface`, kept
+as written; and inline **bold**, *italic* and `code`. Anything else is
+plain text with its indentation kept.
+
+When the description has a checklist, one item is focused (on
+`selection`): Tab / Shift+Tab move between items and Space ticks or
+unticks it, as an undoable change. `E` edits the description in
+`$EDITOR`.
 
 ### Overlays
 
-Help, the editor and the delete dialog float centred on `panel` with a
-rounded `border` (the delete dialog's border is `danger`). Inputs in
-the editor are `surface` fields with a label above; the active one has
-an accent bar, and empty ones show a placeholder.
+Help, the editor, the delete dialog, the "move to…" menu and the
+quick-add prompt float centred on `panel` with a rounded `border` (the
+delete dialog's border is `danger`, the quick-add prompt's is the lane's
+colour). Inputs are `surface` fields; the active one has an accent bar,
+and empty ones show a placeholder. Every overlay's last row lists its
+own keys, generated from the command table.
+
+The editor has a one-line title that scrolls sideways and a
+multi-line description that wraps at words and grows to fill the
+overlay (3 to 10 rows). Enter saves from the title and starts a new line
+in the description; Ctrl+S saves from either. Both fields take readline
+keys (Ctrl+A/E/W/U/K, Alt+B/F), Ctrl+Z / Ctrl+R to undo and redo,
+Shift+arrows to select, and pasted text in one piece.
+
+Help lists the keys for the screen it was opened from (`Keys · Board`,
+`Keys · Details`, …), grouped as in the command table.
+
+### Command palette
+
+`:` or Ctrl+K opens a centred overlay listing every command available
+on the screen it was opened from, then "Go to lane: …" for each column
+and "Go to task: …" for each task (with its column, faint). Each row has
+its shortcut on the right. Typing ranks the rows by fuzzy match, with
+the matched letters highlighted; with nothing typed, commands recently
+run from the palette come first, then actions before movement. ↓/↑ or
+Ctrl+N/Ctrl+P choose, Enter runs, Esc or Ctrl+C closes. Going to a task
+that a search hides clears the search.
+
+### Which-key
+
+Space shows a panel above the status line listing every key available
+on the current screen; the next key does what it would have done
+anyway. Holding `g` for 300 ms shows the keys that can follow it: `g`
+for the first card, and each lane's initial. The panel sizes each
+column to its content, and cuts labels only when there isn't room for
+enough columns to show every key.
+
+### Tip bar
+
+Until it is dismissed, a one-row bar above the status line says `Press ? for
+keys, : for commands · Esc to dismiss`. Opening help or pressing
+Esc on the board dismisses it for good (a marker file in the state
+directory, `~/.local/state/tui-kanban`).
 
 ### Empty states
 
 Empty states say what to do next: `No tasks yet · n to add one · ? for
 all keys` on an empty board, and `No matches for "x" · Esc to clear`
 while a filter matches nothing.
+
+## Navigation
+
+The same keys mean the same thing on every screen:
+
+| Key | Meaning |
+|---|---|
+| `h j k l` / arrows | Move spatially: lanes and cards, the All tasks grid, menus |
+| `Enter` | Open or confirm |
+| `Esc` | Go back one level (close an overlay, clear a search, leave the rail); never quits |
+| `q` | Quit from the board; close from inside an overlay |
+| `?` | Help for the current screen |
+| `:` / Ctrl+K | The command palette |
+| `Space` | Which-key: every key for the current screen |
+| `/` | Search; Ctrl+N / Ctrl+P jump between matches |
+
+Moving faster: `1`–`9` jump to a lane, `g g` / `G` to the first or last
+card, `g` + a letter to the next lane with that initial.
+
+Changing tasks: `H`/`L` move a task to the previous or next lane, `m`
+opens a "move to…" menu, `J`/`K` reorder within a lane, `n` / `N` add a
+task below / above the selected one, `a` quick-adds to the end of the
+lane from a one-line prompt that stays open for the next task, `y`
+duplicates, and `u` / `U` undo and redo.
 
 ## Motion
 

@@ -8,11 +8,13 @@
 use std::time::Instant;
 use uuid::Uuid;
 
+use super::editor::EditorState;
 use super::history::History;
 use super::input::TextInput;
+use super::palette::Palette;
 use crate::animation::{AnimationEngine, AnimationSettings};
 use crate::command::{CommandId, Context};
-use crate::domain::{Board, Task};
+use crate::domain::{Board, Filter, Task};
 use crate::layout::{self, Breakpoint};
 use crate::theme::Theme;
 
@@ -37,70 +39,54 @@ pub enum FocusRegion {
     Cards,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EditorField {
-    Title,
-    Description,
-}
-
-#[derive(Clone, Debug)]
-pub struct EditorState {
-    pub task_id: Option<Uuid>,
-    pub title: TextInput,
-    pub description: TextInput,
-    pub field: EditorField,
-    pub error: Option<String>,
-}
-
-impl EditorState {
-    pub fn new() -> Self {
-        Self {
-            task_id: None,
-            title: TextInput::new(String::new()),
-            description: TextInput::new(String::new()),
-            field: EditorField::Title,
-            error: None,
-        }
-    }
-
-    pub fn from_task(task: &Task) -> Self {
-        Self {
-            task_id: Some(task.id),
-            title: TextInput::new(task.title.clone()),
-            description: TextInput::new(task.description.clone()),
-            field: EditorField::Title,
-            error: None,
-        }
-    }
-
-    pub fn active_input(&mut self) -> &mut TextInput {
-        match self.field {
-            EditorField::Title => &mut self.title,
-            EditorField::Description => &mut self.description,
-        }
-    }
-}
-
-impl Default for EditorState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// A screen or overlay above the board. The top of the stack gets input
 /// first, and Esc pops it, returning to whatever is underneath.
 #[derive(Clone, Debug)]
 pub enum Screen {
-    Detail { task: Uuid, scroll: u16 },
-    Editor(EditorState),
-    ConfirmDelete { task: Uuid },
-    Help { scroll: u16 },
+    /// The detail drawer. `item` is the checklist item Space toggles.
+    Detail {
+        task: Uuid,
+        scroll: u16,
+        item: usize,
+    },
+    Editor(Box<EditorState>),
+    ConfirmDelete {
+        task: Uuid,
+    },
+    /// Help for `context`, the context it was opened from.
+    Help {
+        scroll: u16,
+        context: Context,
+    },
+    /// The "move to…" menu: the task and the highlighted column.
+    MoveTo {
+        task: Uuid,
+        selected: usize,
+    },
+    /// The one-line prompt that adds tasks to the end of `column`.
+    QuickAdd {
+        column: usize,
+        input: TextInput,
+    },
+    /// "Discard changes?", above the editor.
+    ConfirmDiscard,
+    Palette(Palette),
+}
+
+/// A prefix key waiting for the key that completes it: the `g` in `g g`,
+/// or Space, which shows every key available (the which-key panel).
+#[derive(Clone, Copy, Debug)]
+pub struct Pending {
+    pub prefix: char,
+    pub since: Instant,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Search {
-    /// The filter applied to the board.
+    /// The filter applied to the board, as typed.
     pub query: String,
+    /// The query, parsed. Set with [`Search::set_query`].
+    pub filter: Filter,
     /// The search box, while the user is typing in it.
     pub input: Option<TextInput>,
 }
@@ -112,6 +98,13 @@ impl Search {
 
     pub fn is_active(&self) -> bool {
         self.is_typing() || !self.query.is_empty()
+    }
+
+    /// Changes the query, resolving times such as `updated:<7d` against
+    /// `now` (Unix milliseconds).
+    pub fn set_query(&mut self, query: String, now: i64) {
+        self.filter = Filter::parse(&query, now);
+        self.query = query;
     }
 }
 
@@ -189,6 +182,10 @@ pub struct Ui {
     pub viewport: (u16, u16),
     pub theme: Theme,
     pub animations: AnimationEngine,
+    /// A prefix key waiting for its second key.
+    pub pending: Option<Pending>,
+    /// Whether the first-run tip bar shows.
+    pub tip: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -196,6 +193,8 @@ pub struct Session {
     pub save_state: SaveState,
     pub toast: Option<Toast>,
     pub history: History,
+    /// Commands recently run from the palette, most recent first.
+    pub recent_commands: Vec<CommandId>,
 }
 
 #[derive(Clone, Debug)]
@@ -222,6 +221,8 @@ impl Model {
                 animations: AnimationEngine::new(AnimationSettings {
                     enabled: animations_enabled,
                 }),
+                pending: None,
+                tip: false,
             },
             session: Session::default(),
         };
@@ -246,6 +247,10 @@ impl Model {
         }
         match self.ui.screens.last() {
             Some(Screen::Help { .. }) => Context::Help,
+            Some(Screen::MoveTo { .. }) => Context::MoveTo,
+            Some(Screen::QuickAdd { .. }) => Context::QuickAdd,
+            Some(Screen::ConfirmDiscard) => Context::Discard,
+            Some(Screen::Palette(_)) => Context::Palette,
             Some(Screen::ConfirmDelete { .. }) => Context::Confirm,
             Some(Screen::Editor(_)) => Context::Editor,
             Some(Screen::Detail { .. }) => Context::Detail,
@@ -263,6 +268,20 @@ impl Model {
     pub fn command_enabled(&self, id: CommandId) -> bool {
         match id {
             CommandId::ClearSearch => self.ui.search.is_active(),
+            CommandId::NextMatch | CommandId::PreviousMatch => !self.ui.search.query.is_empty(),
+            CommandId::RemoveFilterTerm => {
+                !self.ui.search.query.is_empty() && !self.ui.search.is_typing()
+            }
+            CommandId::JumpToLane | CommandId::GoToLane => self.board.columns.len() > 1,
+            CommandId::ToggleItem | CommandId::NextItem | CommandId::PreviousItem => {
+                matches!(
+                    self.ui.screens.last(),
+                    Some(Screen::Detail { task, .. })
+                        if self.board.task(*task).is_some_and(|task| {
+                            crate::markdown::progress(&task.description).is_some()
+                        })
+                )
+            }
             CommandId::ToggleFocus => self.breakpoint().shows_rail(),
             CommandId::Undo => self.session.history.can_undo(),
             CommandId::Redo => self.session.history.can_redo(),
@@ -270,7 +289,12 @@ impl Model {
             | CommandId::EditTask
             | CommandId::DeleteTask
             | CommandId::MoveTaskLeft
-            | CommandId::MoveTaskRight => {
+            | CommandId::MoveTaskRight
+            | CommandId::MoveTaskUp
+            | CommandId::MoveTaskDown
+            | CommandId::MoveTo
+            | CommandId::DuplicateTask
+            | CommandId::EditExternally => {
                 self.selected_task_id().is_some()
                     || matches!(self.ui.screens.last(), Some(Screen::Detail { .. }))
             }
@@ -289,20 +313,24 @@ impl Model {
         self.ui.selected.filter(|id| self.board.task(*id).is_some())
     }
 
-    fn matches(&self, task: &Task) -> bool {
-        task.matches(&self.ui.search.query)
+    fn matches(&self, column: usize, task: &Task) -> bool {
+        self.ui.search.filter.is_empty()
+            || self
+                .ui
+                .search
+                .filter
+                .matches(task, &self.board.columns[column])
     }
 
     pub fn visible_task_indices(&self, column: usize) -> Vec<usize> {
         self.board
             .columns
             .get(column)
-            .map(|column| {
-                column
-                    .tasks
+            .map(|data| {
+                data.tasks
                     .iter()
                     .enumerate()
-                    .filter(|(_, task)| self.matches(task))
+                    .filter(|(_, task)| self.matches(column, task))
                     .map(|(index, _)| index)
                     .collect()
             })
@@ -319,7 +347,7 @@ impl Model {
                     .tasks
                     .iter()
                     .enumerate()
-                    .filter(|(_, task)| self.matches(task))
+                    .filter(move |(_, task)| self.matches(column_index, task))
                     .map(move |(task_index, task)| VisibleTask {
                         column: column_index,
                         task: task_index,
@@ -379,8 +407,8 @@ impl Model {
         }
         self.ui.active_column = self.ui.active_column.min(self.board.columns.len() - 1);
         if let Some(id) = self.ui.selected
-            && let Some(task) = self.board.task(id)
-            && self.matches(task)
+            && let Some((column, index)) = self.board.task_location(id)
+            && self.matches(column, &self.board.columns[column].tasks[index])
         {
             self.select_task(id);
             return;

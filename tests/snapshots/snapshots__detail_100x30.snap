@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
                                                             ▎
                                                             ▎
                                                             ▎
- DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help
+ DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help   : commands

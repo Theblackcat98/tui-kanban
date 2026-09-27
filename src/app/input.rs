@@ -65,6 +65,33 @@ impl TextInput {
         }
     }
 
+    pub fn insert_str(&mut self, text: &str) {
+        self.clamp_cursor();
+        self.value.insert_str(self.cursor, text);
+        self.cursor += text.len();
+    }
+
+    /// The start of the word before the cursor, skipping spaces first.
+    fn word_start(&self) -> usize {
+        let before = &self.value[..self.cursor];
+        let trimmed = before.trim_end_matches(char::is_whitespace);
+        trimmed
+            .char_indices()
+            .rev()
+            .find(|(_, character)| character.is_whitespace())
+            .map_or(0, |(index, character)| index + character.len_utf8())
+    }
+
+    /// The end of the word after the cursor, skipping spaces first.
+    fn word_end(&self) -> usize {
+        let after = &self.value[self.cursor..];
+        let skipped = after.len() - after.trim_start_matches(char::is_whitespace).len();
+        after[skipped..]
+            .char_indices()
+            .find(|(_, character)| character.is_whitespace())
+            .map_or(self.value.len(), |(index, _)| self.cursor + skipped + index)
+    }
+
     pub fn home(&mut self) {
         self.cursor = 0;
     }
@@ -73,8 +100,43 @@ impl TextInput {
         self.cursor = self.value.len();
     }
 
-    /// Applies an editing key. Returns whether the value changed.
+    /// Applies an editing key, including the readline keys Ctrl+A/E
+    /// (start / end), Ctrl+W (delete a word), Ctrl+U / Ctrl+K (delete to
+    /// the start / end) and Alt+B/F or Ctrl+←/→ (move by word). Returns
+    /// whether the value changed.
     pub fn handle_key(&mut self, key: &KeyEvent) -> bool {
+        self.clamp_cursor();
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let before = self.value.len();
+        match key.code {
+            KeyCode::Char('a') if ctrl => self.home(),
+            KeyCode::Char('e') if ctrl => self.end(),
+            KeyCode::Char('w') if ctrl => {
+                let start = self.word_start();
+                self.value.replace_range(start..self.cursor, "");
+                self.cursor = start;
+            }
+            KeyCode::Backspace if alt || ctrl => {
+                let start = self.word_start();
+                self.value.replace_range(start..self.cursor, "");
+                self.cursor = start;
+            }
+            KeyCode::Char('u') if ctrl => {
+                self.value.replace_range(..self.cursor, "");
+                self.cursor = 0;
+            }
+            KeyCode::Char('k') if ctrl => self.value.truncate(self.cursor),
+            KeyCode::Char('b') if alt => self.cursor = self.word_start(),
+            KeyCode::Left if ctrl || alt => self.cursor = self.word_start(),
+            KeyCode::Char('f') if alt => self.cursor = self.word_end(),
+            KeyCode::Right if ctrl || alt => self.cursor = self.word_end(),
+            _ => return self.handle_plain_key(key),
+        }
+        self.value.len() != before
+    }
+
+    fn handle_plain_key(&mut self, key: &KeyEvent) -> bool {
         match key.code {
             KeyCode::Backspace => self.backspace(),
             KeyCode::Delete => self.delete(),
@@ -118,5 +180,28 @@ mod tests {
         input.move_left();
         input.insert('x');
         assert_eq!(input.value, "x🦀");
+    }
+
+    #[test]
+    fn readline_keys() {
+        let press = |input: &mut TextInput, code: KeyCode, modifiers: KeyModifiers| {
+            input.handle_key(&KeyEvent::new(code, modifiers))
+        };
+        let mut input = TextInput::new("in:done ship  it");
+        assert!(press(&mut input, KeyCode::Char('w'), KeyModifiers::CONTROL));
+        assert_eq!(input.value, "in:done ship  ");
+        press(&mut input, KeyCode::Char('b'), KeyModifiers::ALT);
+        assert_eq!(input.cursor, "in:done ".len());
+        press(&mut input, KeyCode::Char('f'), KeyModifiers::ALT);
+        assert_eq!(input.cursor, "in:done ship".len());
+        press(&mut input, KeyCode::Char('a'), KeyModifiers::CONTROL);
+        assert_eq!(input.cursor, 0);
+        press(&mut input, KeyCode::Right, KeyModifiers::CONTROL);
+        press(&mut input, KeyCode::Char('k'), KeyModifiers::CONTROL);
+        assert_eq!(input.value, "in:done");
+        press(&mut input, KeyCode::Char('u'), KeyModifiers::CONTROL);
+        assert_eq!(input.value, "");
+        input.insert_str("héllo");
+        assert_eq!(input.cursor, input.value.len());
     }
 }

@@ -6,6 +6,7 @@
 use ratatui::layout::Rect;
 use uuid::Uuid;
 
+use super::rich::{self, RichLine};
 use super::text::{truncate_text, wrap};
 use crate::app::{Model, Screen, ViewMode};
 use crate::domain::Task;
@@ -21,6 +22,10 @@ pub(crate) struct Page {
     pub main: Rect,
     /// Where the detail drawer goes, while one is open.
     pub drawer: Option<Rect>,
+    /// The filter bar, below the top bar while searching.
+    pub filter: Option<Rect>,
+    /// The first-run tip, above the status line, while it shows.
+    pub tip: Option<Rect>,
     pub status: Rect,
 }
 
@@ -33,11 +38,29 @@ pub(crate) fn page(model: &Model, area: Rect) -> Page {
         area.width,
         1.min(area.height),
     );
+    let tip_rows = u16::from(model.ui.tip);
+    let tip = model.ui.tip.then(|| {
+        Rect::new(
+            area.x,
+            area.bottom().saturating_sub(2),
+            area.width,
+            1.min(area.height),
+        )
+    });
+    let filter_rows = u16::from(model.ui.search.is_active());
+    let filter = model.ui.search.is_active().then(|| {
+        Rect::new(
+            area.x,
+            area.y.saturating_add(1),
+            area.width,
+            1.min(area.height),
+        )
+    });
     let body = Rect::new(
         area.x,
-        area.y.saturating_add(1),
+        area.y.saturating_add(1 + filter_rows),
         area.width,
-        area.height.saturating_sub(2),
+        area.height.saturating_sub(2 + tip_rows + filter_rows),
     );
     let (rail, rest) = if breakpoint.shows_rail() {
         let (rail, rest) = split_left(body, RAIL_WIDTH);
@@ -69,6 +92,8 @@ pub(crate) fn page(model: &Model, area: Rect) -> Page {
         rail,
         main,
         drawer,
+        filter,
+        tip,
         status,
     }
 }
@@ -223,12 +248,7 @@ pub(crate) fn card_text(task: &Task, card_width: u16) -> CardText {
     if title.is_empty() {
         title.push(String::new());
     }
-    let description = task
-        .description
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(|line| truncate_text(line, width));
+    let description = rich::preview(&task.description).map(|line| truncate_text(&line, width));
     CardText { title, description }
 }
 
@@ -404,6 +424,26 @@ pub(crate) fn all_tasks(model: &Model, main: Rect) -> AllTasks {
     }
 }
 
+/// The All tasks grid as the user sees it: each row's task ids, top to
+/// bottom, so the keys can move through it spatially.
+pub(crate) fn all_tasks_rows(model: &Model) -> Vec<Vec<Uuid>> {
+    let (width, height) = model.ui.viewport;
+    let page = page(model, Rect::new(0, 0, width, height));
+    all_tasks(model, page.main)
+        .items
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::Row { column, tasks } => Some(
+                tasks
+                    .into_iter()
+                    .map(|task| model.board.columns[column].tasks[task].id)
+                    .collect(),
+            ),
+            Item::Header { .. } => None,
+        })
+        .collect()
+}
+
 /// The first visible All tasks item: the remembered scroll position,
 /// moved if needed to show the selected card (and its column's header,
 /// when it is in the first row).
@@ -434,7 +474,7 @@ pub(crate) struct Detail {
     pub title_area: Rect,
     /// Two rows: where the task is, then when it changed.
     pub meta: Rect,
-    pub description: Vec<String>,
+    pub description: Vec<RichLine>,
     pub body: Rect,
     /// The column the scrollbar goes in.
     pub scrollbar: Rect,
@@ -443,6 +483,24 @@ pub(crate) struct Detail {
 impl Detail {
     pub fn max_scroll(&self) -> u16 {
         (self.description.len() as u16).saturating_sub(self.body.height)
+    }
+
+    /// The lines checklist item `item` takes up.
+    pub fn item_lines(&self, item: usize) -> std::ops::Range<usize> {
+        let first = self
+            .description
+            .iter()
+            .position(|line| line.item == Some(item));
+        match first {
+            Some(first) => {
+                let count = self.description[first..]
+                    .iter()
+                    .take_while(|line| line.item == Some(item))
+                    .count();
+                first..first + count
+            }
+            None => 0..0,
+        }
     }
 }
 
@@ -470,7 +528,7 @@ pub(crate) fn detail(task: &Task, drawer: Rect) -> Detail {
             width,
             drawer.bottom().saturating_sub(meta_y).min(2),
         ),
-        description: description_lines(&task.description, width as usize),
+        description: rich::lines(&task.description, width as usize),
         body: Rect::new(x, body_y, width, body_height),
         scrollbar: Rect::new(
             drawer.right().saturating_sub(2),
@@ -480,25 +538,6 @@ pub(crate) fn detail(task: &Task, drawer: Rect) -> Detail {
         ),
         title,
     }
-}
-
-/// A description wrapped to `width`, keeping its line breaks and each
-/// line's indentation (continuation lines are indented to match).
-pub(crate) fn description_lines(text: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    for line in text.trim_end().lines() {
-        let content = line.trim_start();
-        if content.is_empty() {
-            lines.push(String::new());
-            continue;
-        }
-        let indent = &line[..line.len() - content.len()];
-        let indent = if indent.len() * 2 > width { "" } else { indent };
-        for wrapped in wrap(content, width - indent.len(), usize::MAX) {
-            lines.push(format!("{indent}{wrapped}"));
-        }
-    }
-    lines
 }
 
 /// Brings the model's scroll positions in line with the current layout:
@@ -537,6 +576,35 @@ pub(crate) fn sync_scroll(model: &mut Model) {
             if let (Screen::Detail { scroll, .. }, Some(limit)) = (screen, limit) {
                 *scroll = (*scroll).min(limit);
             }
+        }
+    }
+}
+
+/// Scrolls the detail drawer on top so its focused checklist item is in
+/// view.
+pub(crate) fn reveal_detail_item(model: &mut Model) {
+    let (width, height) = model.ui.viewport;
+    if !layout::fits(width, height) {
+        return;
+    }
+    let Some(drawer) = page(model, Rect::new(0, 0, width, height)).drawer else {
+        return;
+    };
+    let Some(&Screen::Detail { task, item, .. }) = model.ui.screens.last() else {
+        return;
+    };
+    let Some(task) = model.board.task(task) else {
+        return;
+    };
+    let layout = detail(task, drawer);
+    let lines = layout.item_lines(item);
+    let visible = layout.body.height as usize;
+    if let Some(Screen::Detail { scroll, .. }) = model.ui.screens.last_mut() {
+        let top = *scroll as usize;
+        if lines.start < top {
+            *scroll = lines.start as u16;
+        } else if lines.end > top + visible {
+            *scroll = lines.end.saturating_sub(visible).min(lines.start) as u16;
         }
     }
 }
@@ -586,11 +654,5 @@ mod tests {
         assert_eq!(visible_end(&heights, 1, 1), 2);
         assert_eq!(visible_end(&heights, 100, 0), 3);
         assert_eq!(visible_end(&heights, 100, 3), 3);
-    }
-
-    #[test]
-    fn descriptions_keep_indentation() {
-        let lines = description_lines("Intro\n\n  - one two three\nlast", 10);
-        assert_eq!(lines, ["Intro", "", "  - one", "  two", "  three", "last"]);
     }
 }

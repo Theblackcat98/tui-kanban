@@ -24,7 +24,7 @@ Buffer {
         "                                                            ",
         "                                                            ",
         "                                                            ",
-        " BOARD   ● saved   j/k card   h/l column   v view   n new   ",
+        " BOARD   ● saved   j/k card   h/l column   v view   n/N new ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
@@ -74,6 +74,6 @@ Buffer {
         x: 43, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 49, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 52, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 57, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 59, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

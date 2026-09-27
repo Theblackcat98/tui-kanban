@@ -10,10 +10,16 @@ mod editor;
 mod geometry;
 mod help;
 mod lanes;
+mod menu;
+mod palette;
+mod prompt;
 mod rail;
+mod rich;
 mod text;
+mod which_key;
 
-pub(crate) use geometry::sync_scroll;
+pub(crate) use geometry::{all_tasks_rows, reveal_detail_item, sync_scroll};
+pub use which_key::DELAY as WHICH_KEY_DELAY;
 
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{Model, Screen, ViewMode};
@@ -36,6 +42,9 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
 
     let page = geometry::page(model, area);
     bars::render_top(frame, page.top, model);
+    if let Some(filter) = page.filter {
+        bars::render_filter(frame, filter, model);
+    }
     if let Some(rail) = page.rail {
         rail::render(frame, rail, model);
     }
@@ -43,20 +52,35 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
         ViewMode::Board => lanes::render(frame, &page, model, clock),
         ViewMode::AllTasks => all_tasks::render(frame, page.main, model, clock),
     }
+    if let Some(tip) = page.tip {
+        bars::render_tip(frame, tip, model);
+    }
+    let above_bars = page.tip.map_or(page.status.y, |tip| tip.y);
+    which_key::render(frame, area, above_bars, model, clock);
     bars::render_status(frame, page.status, model, clock);
 
     // Screens are drawn bottom first, so a dialog opened from the detail
     // drawer appears on top of it.
     for screen in &model.ui.screens {
         match screen {
-            Screen::Detail { task, scroll } => {
+            Screen::Detail { task, scroll, item } => {
                 if let Some(drawer) = page.drawer {
-                    detail::render(frame, drawer, model, *task, *scroll, clock);
+                    detail::render(frame, drawer, model, *task, *scroll, *item, clock);
                 }
             }
             Screen::Editor(editor) => editor::render(frame, area, model, editor, clock),
-            Screen::Help { scroll } => help::render(frame, area, model, *scroll, clock),
+            Screen::Help { scroll, context } => {
+                help::render(frame, area, model, *scroll, *context, clock)
+            }
             Screen::ConfirmDelete { task } => confirm::render(frame, area, model, *task, clock),
+            Screen::ConfirmDiscard => confirm::render_discard(frame, area, model, clock),
+            Screen::Palette(state) => palette::render(frame, area, model, state, clock),
+            Screen::MoveTo { task, selected } => {
+                menu::render(frame, area, model, *task, *selected, clock)
+            }
+            Screen::QuickAdd { column, input } => {
+                prompt::render(frame, area, model, *column, input, clock)
+            }
         }
     }
 }
@@ -91,8 +115,8 @@ fn render_too_small(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     );
 }
 
-pub(crate) fn help_line_count() -> usize {
-    help::line_count()
+pub(crate) fn help_line_count(context: crate::command::Context) -> usize {
+    help::line_count(context)
 }
 
 /// A column's accent colour.
@@ -277,7 +301,11 @@ mod tests {
             .board
             .add_task(0, "Inspect me", "A useful description", 0)
             .unwrap();
-        model.ui.screens.push(Screen::Detail { task, scroll: 0 });
+        model.ui.screens.push(Screen::Detail {
+            task,
+            scroll: 0,
+            item: 0,
+        });
         let rendered = render_text(&model, 100, 30);
         assert!(rendered.contains("DETAIL"), "{rendered}");
         assert!(rendered.contains("created"));

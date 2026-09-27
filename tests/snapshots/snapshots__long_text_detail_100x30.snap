@@ -9,7 +9,7 @@ expression: "harness.screen(100, 30)"
  ▌ A column with … 2                                        ▎
    Done            1   ▎ A very long task title that keeps  ▎  A column with a very long name th…
                        ▎ going well past the width of any…  ▎  updated 3h ago · created Aug 28
-                       ▎ - an indented list item            ▎
+                       ▎ • an indented list item            ▎
                        ▎ ◷ 2m ago                           ▎  全角文字の説明文です。幅の計算を確
                                                             ▎  かめます。
                        ▌ 日本語のタスク名と絵文字 🦀🚀      ▎
@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
                                                             ▎
                                                             ▎
                                                             ▎
- DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help
+ DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help   : commands
