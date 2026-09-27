@@ -1,6 +1,6 @@
 use super::muted_style;
 use super::{cards, truncate_text};
-use crate::app::{App, FocusRegion};
+use crate::app::{FocusRegion, Model};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -9,41 +9,41 @@ use ratatui::widgets::{Block, Paragraph};
 
 pub(crate) const WIDTH: u16 = 20;
 
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
+pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     if area.width == 0 || area.height == 0 {
         return;
     }
     frame.render_widget(
-        Block::default().style(Style::default().bg(app.theme.surface)),
+        Block::default().style(Style::default().bg(model.ui.theme.surface)),
         area,
     );
     let heading = Paragraph::new(Line::from(Span::styled(
         " COLUMNS",
-        muted_style(app).add_modifier(Modifier::BOLD),
+        muted_style(model).add_modifier(Modifier::BOLD),
     )))
-    .style(Style::default().bg(app.theme.surface));
+    .style(Style::default().bg(model.ui.theme.surface));
     frame.render_widget(heading, Rect::new(area.x, area.y, area.width, 1));
 
     let mut y = area.y.saturating_add(2);
-    for (index, column) in app.board.columns.iter().enumerate() {
+    for (index, column) in model.board.columns.iter().enumerate() {
         if y >= area.y.saturating_add(area.height) {
             break;
         }
-        let selected = index == app.active_column;
-        let focused = app.focus == FocusRegion::Rail;
+        let selected = index == model.ui.active_column;
+        let focused = model.ui.focus == FocusRegion::Rail;
         let background = if selected && focused {
-            app.theme.selection
+            model.ui.theme.selection
         } else {
-            app.theme.surface
+            model.ui.theme.surface
         };
         let text_color = if selected {
-            app.theme.text
+            model.ui.theme.text
         } else {
-            app.theme.muted
+            model.ui.theme.muted
         };
         let marker = if selected { "▌" } else { " " };
-        let visible = app.visible_task_indices(index);
-        let count = if app.search_query.is_empty() {
+        let visible = model.visible_task_indices(index);
+        let count = if model.ui.search.query.is_empty() {
             column.tasks.len().to_string()
         } else {
             format!("{}/{}", visible.len(), column.tasks.len())
@@ -71,7 +71,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 name,
                 Style::default().fg(text_color).bg(background).add_modifier(
                     if selected && focused {
-                        Modifier::BOLD | app.theme.selected_modifier
+                        Modifier::BOLD | model.ui.theme.selected_modifier
                     } else {
                         Modifier::empty()
                     },
@@ -84,7 +84,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
             Paragraph::new(Line::from(Span::styled(
                 truncate_text(&count, count_area.width as usize),
                 Style::default()
-                    .fg(cards::column_accent(app, index))
+                    .fg(cards::column_accent(model, index))
                     .bg(background),
             )))
             .style(Style::default().bg(background)),
@@ -93,16 +93,20 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
         y = y.saturating_add(1);
     }
 
-    if app.board.columns.is_empty() {
+    if model.board.columns.is_empty() {
         frame.render_widget(
-            Paragraph::new(" No columns").style(muted_style(app).bg(app.theme.surface)),
+            Paragraph::new(" No columns").style(muted_style(model).bg(model.ui.theme.surface)),
             Rect::new(area.x, area.y.saturating_add(2), area.width, 1),
         );
     }
 
     if area.width > 1 {
         frame.render_widget(
-            Paragraph::new("│").style(Style::default().fg(app.theme.border).bg(app.theme.surface)),
+            Paragraph::new("│").style(
+                Style::default()
+                    .fg(model.ui.theme.border)
+                    .bg(model.ui.theme.surface),
+            ),
             Rect::new(
                 area.x.saturating_add(area.width - 1),
                 area.y,

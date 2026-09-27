@@ -1,7 +1,7 @@
 use super::muted_style;
 use super::{centered_rect, field_label, render_clear, surface_style, truncate_text};
 use crate::animation::{AnimationKind, ease_out_cubic};
-use crate::app::{App, EditorField, EditorState};
+use crate::app::{EditorField, EditorState, Model};
 use crate::clock::Clock;
 use crate::command::Context;
 use ratatui::Frame;
@@ -13,7 +13,7 @@ use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 pub(crate) fn render(
     frame: &mut Frame<'_>,
     area: Rect,
-    app: &App,
+    model: &Model,
     editor: &EditorState,
     clock: Clock,
 ) {
@@ -21,7 +21,8 @@ pub(crate) fn render(
         .clamp(28, 72)
         .min(area.width.saturating_sub(2));
     let full_height = 15.min(area.height.saturating_sub(2));
-    let progress = app
+    let progress = model
+        .ui
         .animations
         .progress(AnimationKind::Modal, clock.instant)
         .map(ease_out_cubic)
@@ -35,8 +36,8 @@ pub(crate) fn render(
     render_clear(frame, modal);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(app.theme.accent))
-        .style(surface_style(app))
+        .border_style(Style::default().fg(model.ui.theme.accent))
+        .style(surface_style(model))
         .title(Span::styled(
             if editor.task_id.is_some() {
                 " Edit task "
@@ -44,7 +45,7 @@ pub(crate) fn render(
                 " New task "
             },
             Style::default()
-                .fg(app.theme.accent)
+                .fg(model.ui.theme.accent)
                 .add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(modal);
@@ -66,7 +67,7 @@ pub(crate) fn render(
         "Task title",
         &editor.title,
         editor.field == EditorField::Title,
-        app,
+        model,
     );
     render_input(
         frame,
@@ -75,21 +76,25 @@ pub(crate) fn render(
         "Add details (optional)",
         &editor.description,
         editor.field == EditorField::Description,
-        app,
+        model,
     );
-    let hints = super::hint_text(app, Context::Editor, inner.width.saturating_sub(1) as usize);
+    let hints = super::hint_text(
+        model,
+        Context::Editor,
+        inner.width.saturating_sub(1) as usize,
+    );
     let message = editor.error.as_deref().unwrap_or(&hints);
     let color = if editor.error.is_some() {
-        app.theme.error
+        model.ui.theme.error
     } else {
-        app.theme.muted
+        model.ui.theme.muted
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             format!(" {message}"),
             Style::default().fg(color),
         )))
-        .style(surface_style(app))
+        .style(surface_style(model))
         .wrap(Wrap { trim: true }),
         rows[2],
     );
@@ -102,7 +107,7 @@ fn render_input(
     placeholder: &str,
     input: &crate::app::TextInput,
     active: bool,
-    app: &App,
+    model: &Model,
 ) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -111,19 +116,19 @@ fn render_input(
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             format!(" {label}"),
-            field_label(app, label, active),
+            field_label(model, label, active),
         )))
-        .style(surface_style(app)),
+        .style(surface_style(model)),
         columns[0],
     );
     let input_block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(if active {
-            app.theme.accent
+            model.ui.theme.accent
         } else {
-            app.theme.border
+            model.ui.theme.border
         }))
-        .style(Style::default().bg(app.theme.surface_alt));
+        .style(Style::default().bg(model.ui.theme.surface_alt));
     let input_inner = input_block.inner(columns[1]);
     frame.render_widget(input_block, columns[1]);
     if input_inner.width == 0 || input_inner.height == 0 {
@@ -135,11 +140,11 @@ fn render_input(
         &input.value
     };
     let value_style = if input.value.is_empty() && !active {
-        muted_style(app).bg(app.theme.surface_alt)
+        muted_style(model).bg(model.ui.theme.surface_alt)
     } else {
         Style::default()
-            .fg(app.theme.text)
-            .bg(app.theme.surface_alt)
+            .fg(model.ui.theme.text)
+            .bg(model.ui.theme.surface_alt)
     };
     frame.render_widget(
         Paragraph::new(truncate_text(value, input_inner.width as usize))

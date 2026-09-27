@@ -2,11 +2,8 @@
 source: tests/snapshots.rs
 expression: "harness.screen(30, 8)"
 ---
-                       saved
-╭────────────────────────────╮
-│ Backlog  3                 │
-│╭──────────────────────────╮│
-││                          ││
-│╰──────────────────────────╯│
-╰────────────────────────────╯
- j/k card  •  h/l column
+
+
+      Terminal too small
+       30×8, need 40×12
+            q quit

@@ -1,10 +1,20 @@
 //! Layout decisions that depend on the terminal size, worked out in one
 //! place so the key handlers and the renderer always agree.
 
+/// The smallest terminal the app can be used in. Below this, a "terminal
+/// too small" screen is shown and only quitting works.
+pub const MIN_WIDTH: u16 = 40;
+pub const MIN_HEIGHT: u16 = 12;
+
 /// Terminals narrower than this hide the column rail.
 pub const REGULAR_MIN_WIDTH: u16 = 76;
 /// Terminals at least this wide show every column side by side.
 pub const WIDE_MIN_WIDTH: u16 = 110;
+
+/// Whether a terminal of this size is big enough to use.
+pub fn fits(width: u16, height: u16) -> bool {
+    width >= MIN_WIDTH && height >= MIN_HEIGHT
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Breakpoint {

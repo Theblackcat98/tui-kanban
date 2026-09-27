@@ -1,6 +1,5 @@
 use std::env;
 use std::ffi::OsStr;
-use std::sync::OnceLock;
 
 use ratatui::style::{Color, Modifier};
 
@@ -89,12 +88,6 @@ impl Theme {
 /// counts, as the convention specifies.
 fn no_color(value: Option<&OsStr>) -> bool {
     value.is_some_and(|value| !value.is_empty())
-}
-
-static SHARED_THEME: OnceLock<Theme> = OnceLock::new();
-
-pub fn shared_theme() -> Theme {
-    *SHARED_THEME.get_or_init(Theme::from_env)
 }
 
 #[cfg(test)]

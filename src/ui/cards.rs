@@ -1,7 +1,7 @@
 use super::muted_style;
 use super::{blend_color, truncate_text};
 use crate::animation::{AnimationKind, ease_out_cubic};
-use crate::app::{App, FocusRegion};
+use crate::app::{FocusRegion, Model};
 use crate::clock::Clock;
 use crate::domain::Task;
 use ratatui::Frame;
@@ -15,7 +15,7 @@ pub(crate) const CARD_HEIGHT: u16 = 6;
 pub(crate) fn render_card(
     frame: &mut Frame<'_>,
     area: Rect,
-    app: &App,
+    model: &Model,
     column_index: usize,
     task: &Task,
     selected: bool,
@@ -24,30 +24,31 @@ pub(crate) fn render_card(
     if area.width == 0 || area.height == 0 {
         return;
     }
-    let focused = app.focus == FocusRegion::Cards;
-    let selection_progress = app
+    let focused = model.ui.focus == FocusRegion::Cards;
+    let selection_progress = model
+        .ui
         .animations
         .progress(AnimationKind::Selection, clock.instant)
         .map(ease_out_cubic)
         .unwrap_or(1.0);
-    let accent = column_accent(app, column_index);
+    let accent = column_accent(model, column_index);
     let selected_and_focused = selected && focused;
     let background = if selected_and_focused {
         blend_color(
-            app.theme.surface_alt,
-            app.theme.selection,
+            model.ui.theme.surface_alt,
+            model.ui.theme.selection,
             selection_progress,
         )
     } else {
-        app.theme.surface_alt
+        model.ui.theme.surface_alt
     };
     let border = if selected_and_focused {
-        blend_color(app.theme.border, accent, selection_progress)
+        blend_color(model.ui.theme.border, accent, selection_progress)
     } else {
-        app.theme.border
+        model.ui.theme.border
     };
     let selected_modifier = if selected_and_focused {
-        app.theme.selected_modifier
+        model.ui.theme.selected_modifier
     } else {
         Modifier::empty()
     };
@@ -72,14 +73,14 @@ pub(crate) fn render_card(
     ])
     .split(inner);
     let title_style = Style::default()
-        .fg(app.theme.text)
+        .fg(model.ui.theme.text)
         .bg(background)
         .add_modifier(if selected_and_focused {
             Modifier::BOLD
         } else {
             Modifier::empty()
         });
-    let detail_style = muted_style(app).bg(background);
+    let detail_style = muted_style(model).bg(background);
     let metadata_style = Style::default().fg(accent).bg(background);
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -102,7 +103,7 @@ pub(crate) fn render_card(
     );
     let metadata = format!(
         " {}  •  updated {}",
-        task_column_name(app, column_index),
+        task_column_name(model, column_index),
         relative_time(task.updated_at, clock.wall_millis)
     );
     frame.render_widget(
@@ -115,11 +116,11 @@ pub(crate) fn render_card(
     );
 }
 
-pub(crate) fn column_accent(app: &App, index: usize) -> ratatui::style::Color {
+pub(crate) fn column_accent(model: &Model, index: usize) -> ratatui::style::Color {
     match index {
-        0 => app.theme.accent_alt,
-        1 => app.theme.warning,
-        _ => app.theme.success,
+        0 => model.ui.theme.accent_alt,
+        1 => model.ui.theme.warning,
+        _ => model.ui.theme.success,
     }
 }
 
@@ -133,8 +134,9 @@ pub(crate) fn relative_time(timestamp: i64, now: i64) -> String {
     }
 }
 
-fn task_column_name(app: &App, column_index: usize) -> &str {
-    app.board
+fn task_column_name(model: &Model, column_index: usize) -> &str {
+    model
+        .board
         .columns
         .get(column_index)
         .map(|column| column.name.as_str())

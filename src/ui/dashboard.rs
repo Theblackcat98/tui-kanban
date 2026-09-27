@@ -1,6 +1,6 @@
 use super::muted_style;
 use super::{cards, text_style, truncate_text};
-use crate::app::{App, ViewMode};
+use crate::app::{Model, ViewMode};
 use crate::clock::Clock;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -12,66 +12,73 @@ const ALL_TASK_MIN_CARD_WIDTH: u16 = 30;
 const ALL_TASK_MAX_CARD_COLUMNS: u16 = 3;
 const CARD_GAP: u16 = 1;
 
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
-    if app.board.columns.is_empty() {
+pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
+    if model.board.columns.is_empty() {
         frame.render_widget(
             Paragraph::new("This board has no columns.")
-                .style(text_style(app))
+                .style(text_style(model))
                 .wrap(Wrap { trim: true }),
             area,
         );
         return;
     }
 
-    match app.view_mode {
-        ViewMode::Board => render_board(frame, area, app, clock),
-        ViewMode::AllTasks => render_all_tasks(frame, area, app, clock),
+    match model.ui.view {
+        ViewMode::Board => render_board(frame, area, model, clock),
+        ViewMode::AllTasks => render_all_tasks(frame, area, model, clock),
     }
 }
 
-fn render_board(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
+fn render_board(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
     if area.width < 90 {
-        render_column(frame, area, app, app.active_column, clock);
+        render_column(frame, area, model, model.ui.active_column, clock);
         return;
     }
 
-    let count = app.board.columns.len() as u16;
+    let count = model.board.columns.len() as u16;
     let available = area
         .width
         .saturating_sub(CARD_GAP * count.saturating_sub(1));
     let base_width = available / count;
     let remainder = available % count;
     let mut x = area.x;
-    for index in 0..app.board.columns.len() {
+    for index in 0..model.board.columns.len() {
         let width = base_width + u16::from((index as u16) < remainder);
         let column_area = Rect::new(x, area.y, width, area.height);
-        render_column(frame, column_area, app, index, clock);
+        render_column(frame, column_area, model, index, clock);
         x = x.saturating_add(width).saturating_add(CARD_GAP);
     }
 }
 
-fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usize, clock: Clock) {
-    let Some(column) = app.board.columns.get(column_index) else {
+fn render_column(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    column_index: usize,
+    clock: Clock,
+) {
+    let Some(column) = model.board.columns.get(column_index) else {
         return;
     };
-    let focused = app.focus == crate::app::FocusRegion::Cards && app.active_column == column_index;
+    let focused =
+        model.ui.focus == crate::app::FocusRegion::Cards && model.ui.active_column == column_index;
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(if focused {
-            cards::column_accent(app, column_index)
+            cards::column_accent(model, column_index)
         } else {
-            app.theme.border
+            model.ui.theme.border
         }))
-        .style(Style::default().bg(app.theme.surface));
+        .style(Style::default().bg(model.ui.theme.surface));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width == 0 || inner.height == 0 {
         return;
     }
 
-    let visible = app.visible_task_indices(column_index);
+    let visible = model.visible_task_indices(column_index);
     let total = column.tasks.len();
-    let count_text = if app.search_query.is_empty() {
+    let count_text = if model.ui.search.query.is_empty() {
         total.to_string()
     } else {
         format!("{} / {total}", visible.len())
@@ -81,23 +88,23 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
             format!(" {} ", truncate_text(&column.name, inner.width as usize)),
             Style::default()
                 .fg(if focused {
-                    app.theme.text
+                    model.ui.theme.text
                 } else {
-                    app.theme.muted
+                    model.ui.theme.muted
                 })
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" {count_text}"),
             Style::default().fg(if focused {
-                cards::column_accent(app, column_index)
+                cards::column_accent(model, column_index)
             } else {
-                app.theme.muted
+                model.ui.theme.muted
             }),
         ),
     ]);
     frame.render_widget(
-        Paragraph::new(heading).style(Style::default().bg(app.theme.surface)),
+        Paragraph::new(heading).style(Style::default().bg(model.ui.theme.surface)),
         Rect::new(inner.x, inner.y, inner.width, 1),
     );
 
@@ -111,14 +118,14 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
         return;
     }
     if visible.is_empty() {
-        let message = if app.search_query.is_empty() {
+        let message = if model.ui.search.query.is_empty() {
             "No cards yet\n\nPress n to create one"
         } else {
             "No matching cards\n\nPress esc to clear search"
         };
         frame.render_widget(
             Paragraph::new(Text::from(message))
-                .style(muted_style(app).bg(app.theme.surface))
+                .style(muted_style(model).bg(model.ui.theme.surface))
                 .wrap(Wrap { trim: true }),
             list_area,
         );
@@ -128,7 +135,7 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
     let card_height = cards::CARD_HEIGHT.min(list_area.height);
     let capacity = (list_area.height / cards::CARD_HEIGHT).max(1) as usize;
     let selected_visual = if focused {
-        app.selected_visual_index(column_index).unwrap_or(0)
+        model.selected_visual_index(column_index).unwrap_or(0)
     } else {
         0
     };
@@ -139,7 +146,7 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
     }
     .min(visible.len().saturating_sub(capacity));
     let end = (start + capacity).min(visible.len());
-    let selected_id = app.selected_task_id();
+    let selected_id = model.selected_task_id();
     for (offset, task_index) in visible[start..end].iter().enumerate() {
         let Some(task) = column.tasks.get(*task_index) else {
             continue;
@@ -155,7 +162,7 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
         cards::render_card(
             frame,
             card_area,
-            app,
+            model,
             column_index,
             task,
             focused && selected_id == Some(task.id),
@@ -170,15 +177,15 @@ struct AllTaskSection {
     start: usize,
 }
 
-fn render_all_tasks(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
+fn render_all_tasks(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
     if area.width == 0 || area.height == 0 {
         return;
     }
     let per_row = all_task_card_columns(area.width);
-    let mut sections = Vec::with_capacity(app.board.columns.len());
+    let mut sections = Vec::with_capacity(model.board.columns.len());
     let mut line = 0usize;
-    for (column_index, _column) in app.board.columns.iter().enumerate() {
-        let visible = app.visible_task_indices(column_index);
+    for (column_index, _column) in model.board.columns.iter().enumerate() {
+        let visible = model.visible_task_indices(column_index);
         let height = if visible.is_empty() {
             3
         } else {
@@ -194,8 +201,8 @@ fn render_all_tasks(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) 
     }
 
     let viewport = area.height as usize;
-    let mut scroll = app.all_tasks_scroll as usize;
-    let selected_line = selected_line(&sections, app, per_row);
+    let mut scroll = 0;
+    let selected_line = selected_line(&sections, model, per_row);
     if let Some(selected_line) = selected_line {
         if selected_line < scroll {
             scroll = selected_line;
@@ -212,26 +219,26 @@ fn render_all_tasks(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) 
     }
 
     for section in sections {
-        render_all_section(frame, area, app, &section, per_row, scroll, clock);
+        render_all_section(frame, area, model, &section, per_row, scroll, clock);
     }
 }
 
 fn render_all_section(
     frame: &mut Frame<'_>,
     area: Rect,
-    app: &App,
+    model: &Model,
     section: &AllTaskSection,
     per_row: u16,
     scroll: usize,
     clock: Clock,
 ) {
-    let Some(column) = app.board.columns.get(section.column) else {
+    let Some(column) = model.board.columns.get(section.column) else {
         return;
     };
     let heading_line = section.start;
     if heading_line >= scroll && heading_line < scroll.saturating_add(area.height as usize) {
         let y = area.y.saturating_add((heading_line - scroll) as u16);
-        let count_text = if app.search_query.is_empty() {
+        let count_text = if model.ui.search.query.is_empty() {
             section.visible.len().to_string()
         } else {
             format!("{} / {}", section.visible.len(), column.tasks.len())
@@ -240,14 +247,14 @@ fn render_all_section(
             Span::styled(
                 format!(" {} ", truncate_text(&column.name, area.width as usize)),
                 Style::default()
-                    .fg(cards::column_accent(app, section.column))
+                    .fg(cards::column_accent(model, section.column))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!(" {count_text} tasks"), muted_style(app)),
+            Span::styled(format!(" {count_text} tasks"), muted_style(model)),
         ]);
         frame.render_widget(
             Paragraph::new(heading)
-                .style(Style::default().bg(app.theme.background))
+                .style(Style::default().bg(model.ui.theme.background))
                 .wrap(Wrap { trim: true }),
             Rect::new(area.x, y, area.width, 1),
         );
@@ -257,14 +264,14 @@ fn render_all_section(
         let line = section.start.saturating_add(1);
         if line >= scroll && line < scroll.saturating_add(area.height as usize) {
             let y = area.y.saturating_add((line - scroll) as u16);
-            let message = if app.search_query.is_empty() {
+            let message = if model.ui.search.query.is_empty() {
                 "No tasks"
             } else {
                 "No matching tasks"
             };
             frame.render_widget(
                 Paragraph::new(format!("  {message}"))
-                    .style(muted_style(app).bg(app.theme.background)),
+                    .style(muted_style(model).bg(model.ui.theme.background)),
                 Rect::new(area.x, y, area.width, 1),
             );
         }
@@ -276,7 +283,7 @@ fn render_all_section(
         .saturating_sub(CARD_GAP * per_row.saturating_sub(1));
     let base_width = available / per_row;
     let remainder = available % per_row;
-    let selected_id = app.selected_task_id();
+    let selected_id = model.selected_task_id();
     for (row, row_tasks) in section.visible.chunks(per_row as usize).enumerate() {
         let line = section
             .start
@@ -295,7 +302,7 @@ fn render_all_section(
             cards::render_card(
                 frame,
                 card_area,
-                app,
+                model,
                 section.column,
                 task,
                 selected_id == Some(task.id),
@@ -306,10 +313,10 @@ fn render_all_section(
     }
 }
 
-fn selected_line(sections: &[AllTaskSection], app: &App, per_row: u16) -> Option<usize> {
-    let selected_id = app.selected_task_id()?;
+fn selected_line(sections: &[AllTaskSection], model: &Model, per_row: u16) -> Option<usize> {
+    let selected_id = model.selected_task_id()?;
     for section in sections {
-        let Some(column) = app.board.columns.get(section.column) else {
+        let Some(column) = model.board.columns.get(section.column) else {
             continue;
         };
         let Some(position) = section.visible.iter().position(|task_index| {

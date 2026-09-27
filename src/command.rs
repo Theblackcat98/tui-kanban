@@ -22,10 +22,12 @@ pub enum Context {
     Editor = 1 << 5,
     Help = 1 << 6,
     Confirm = 1 << 7,
+    /// The terminal is too small to use.
+    TooSmall = 1 << 8,
 }
 
 impl Context {
-    pub const ALL: [Context; 8] = [
+    pub const ALL: [Context; 9] = [
         Context::Board,
         Context::AllTasks,
         Context::Rail,
@@ -34,6 +36,7 @@ impl Context {
         Context::Editor,
         Context::Help,
         Context::Confirm,
+        Context::TooSmall,
     ];
 }
 
@@ -640,7 +643,12 @@ pub const COMMANDS: &[Command] = &[
         keys: &[ch('q')],
         label: "quit",
         group: G::General,
-        contexts: DASHBOARD,
+        contexts: Contexts::of(&[
+            Context::Board,
+            Context::AllTasks,
+            Context::Rail,
+            Context::TooSmall,
+        ]),
         hint: None,
         pair: None,
     },

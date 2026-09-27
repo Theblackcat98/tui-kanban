@@ -6,9 +6,10 @@ mod sidebar;
 mod task_editor;
 
 use crate::animation::{AnimationKind, ease_out_cubic};
-use crate::app::{App, Mode, SaveState, ToastKind};
+use crate::app::{Model, SaveState, Screen, ToastKind};
 use crate::clock::Clock;
 use crate::command::{self, Context};
+use crate::layout;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::Color;
@@ -18,12 +19,16 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-pub fn render(frame: &mut Frame<'_>, app: &App, clock: Clock) {
+pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
     let area = frame.area();
     frame.render_widget(
-        Block::default().style(Style::default().bg(app.theme.background)),
+        Block::default().style(Style::default().bg(model.ui.theme.background)),
         area,
     );
+    if !layout::fits(area.width, area.height) {
+        render_too_small(frame, area, model);
+        return;
+    }
 
     let sections = Layout::vertical([
         Constraint::Length(1),
@@ -31,54 +36,92 @@ pub fn render(frame: &mut Frame<'_>, app: &App, clock: Clock) {
         Constraint::Length(1),
     ])
     .split(area);
-    render_header(frame, sections[0], app);
+    render_header(frame, sections[0], model);
     let content = sections[1];
     if content.width >= sidebar::WIDTH + 56 {
         let columns = Layout::horizontal([Constraint::Length(sidebar::WIDTH), Constraint::Min(1)])
             .split(content);
-        sidebar::render(frame, columns[0], app);
-        dashboard::render(frame, columns[1], app, clock);
+        sidebar::render(frame, columns[0], model);
+        dashboard::render(frame, columns[1], model, clock);
     } else {
-        dashboard::render(frame, content, app, clock);
+        dashboard::render(frame, content, model, clock);
     }
-    render_footer(frame, sections[2], app, clock);
+    render_footer(frame, sections[2], model, clock);
 
-    match &app.mode {
-        Mode::Editor(editor) => task_editor::render(frame, area, app, editor, clock),
-        Mode::Detail(id) => detail::render(frame, area, app, *id, clock),
-        Mode::Help => help::render(frame, area, app, clock),
-        Mode::ConfirmDelete(id) => help::render_confirm(frame, area, app, *id, clock),
-        Mode::Dashboard => {}
+    // Screens are drawn bottom first, so a dialog opened from the detail
+    // drawer appears on top of it.
+    for screen in &model.ui.screens {
+        match screen {
+            Screen::Editor(editor) => task_editor::render(frame, area, model, editor, clock),
+            Screen::Detail { task, scroll } => {
+                detail::render(frame, area, model, *task, *scroll, clock)
+            }
+            Screen::Help { scroll } => help::render(frame, area, model, *scroll, clock),
+            Screen::ConfirmDelete { task } => {
+                help::render_confirm(frame, area, model, *task, clock)
+            }
+        }
     }
 }
 
-fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
+/// Shown instead of a broken layout when the terminal is below the
+/// minimum size. Only quitting works until it grows.
+fn render_too_small(frame: &mut Frame<'_>, area: Rect, model: &Model) {
+    let lines = vec![
+        Line::from(Span::styled(
+            "Terminal too small",
+            Style::default()
+                .fg(model.ui.theme.text)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "{}×{}, need {}×{}",
+                area.width,
+                area.height,
+                layout::MIN_WIDTH,
+                layout::MIN_HEIGHT
+            ),
+            muted_style(model),
+        )),
+        Line::from(Span::styled("q quit", muted_style(model))),
+    ];
+    let height = (lines.len() as u16).min(area.height);
+    let top = area.y + area.height.saturating_sub(height) / 2;
+    frame.render_widget(
+        Paragraph::new(lines)
+            .alignment(Alignment::Center)
+            .wrap(ratatui::widgets::Wrap { trim: true }),
+        Rect::new(area.x, top, area.width, height),
+    );
+}
+
+fn render_header(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     let left = Line::from(vec![
         Span::styled(
             " TUI KANBAN ",
             Style::default()
-                .fg(app.theme.accent)
+                .fg(model.ui.theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("  {}  ", app.board.name),
-            Style::default().fg(app.theme.text),
+            format!("  {}  ", model.board.name),
+            Style::default().fg(model.ui.theme.text),
         ),
         Span::styled(
-            format!(" [{}] ", app.view_mode.label()),
-            Style::default().fg(app.theme.accent_alt),
+            format!(" [{}] ", model.ui.view.label()),
+            Style::default().fg(model.ui.theme.accent_alt),
         ),
     ]);
-    let searching = app.search_active;
-    let right_text = if searching || !app.search_query.is_empty() {
-        format!(" / {}", app.search_query)
+    let searching = model.ui.search.is_typing();
+    let right_text = if searching || !model.ui.search.query.is_empty() {
+        format!(" / {}", model.ui.search.query)
     } else {
-        format!("  {}  ", app.status_text())
+        format!("  {}  ", model.status_text())
     };
-    let right_color = match &app.save_state {
-        SaveState::Error(_) => app.theme.error,
-        SaveState::Dirty => app.theme.warning,
-        SaveState::Clean => app.theme.muted,
+    let right_color = match &model.session.save_state {
+        SaveState::Failed(_) => model.ui.theme.error,
+        SaveState::Saved => model.ui.theme.muted,
     };
     let right = Line::from(Span::styled(right_text, Style::default().fg(right_color))).alignment(
         if searching {
@@ -90,9 +133,11 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let columns = Layout::horizontal([Constraint::Min(1), Constraint::Length(32)]).split(area);
     frame.render_widget(Paragraph::new(left), columns[0]);
     frame.render_widget(Paragraph::new(right), columns[1]);
-    if searching && columns[1].width > 0 {
-        let cursor = app.search_input.cursor.min(app.search_input.value.len());
-        let prefix = format!(" /{}", &app.search_input.value[..cursor]);
+    if let Some(input) = &model.ui.search.input
+        && columns[1].width > 0
+    {
+        let cursor = input.cursor.min(input.value.len());
+        let prefix = format!(" /{}", &input.value[..cursor]);
         let offset = Line::from(prefix)
             .width()
             .min(columns[1].width.saturating_sub(1) as usize) as u16;
@@ -100,21 +145,26 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 }
 
-fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
-    let hints = hint_text(app, app.context(), area.width.saturating_sub(2) as usize);
-    let mut spans = vec![Span::styled(format!(" {hints} "), muted_style(app))];
-    if let Some(toast) = &app.toast {
+fn render_footer(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
+    let hints = hint_text(
+        model,
+        model.context(),
+        area.width.saturating_sub(2) as usize,
+    );
+    let mut spans = vec![Span::styled(format!(" {hints} "), muted_style(model))];
+    if let Some(toast) = &model.session.toast {
         let color = match toast.kind {
-            ToastKind::Info => app.theme.accent_alt,
-            ToastKind::Success => app.theme.success,
-            ToastKind::Error => app.theme.error,
+            ToastKind::Info => model.ui.theme.accent_alt,
+            ToastKind::Success => model.ui.theme.success,
+            ToastKind::Error => model.ui.theme.error,
         };
-        let progress = app
+        let progress = model
+            .ui
             .animations
             .progress(AnimationKind::Toast, clock.instant)
             .map(ease_out_cubic)
             .unwrap_or(1.0);
-        let color = blend_color(app.theme.muted, color, progress);
+        let color = blend_color(model.ui.theme.muted, color, progress);
         spans.push(Span::styled(
             format!("  {} ", toast.message),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -125,9 +175,9 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
 
 /// The footer hints for a context from the command table, joined with
 /// " • " and cut to whole hints that fit in `max_width` cells.
-pub(crate) fn hint_text(app: &App, context: Context, max_width: usize) -> String {
+pub(crate) fn hint_text(model: &Model, context: Context, max_width: usize) -> String {
     let mut text = String::new();
-    for (keys, label) in command::hints(context, |id| app.command_enabled(id)) {
+    for (keys, label) in command::hints(context, |id| model.command_enabled(id)) {
         let hint = format!("{keys} {label}");
         let separator = if text.is_empty() { "" } else { "  •  " };
         if text.width() + separator.width() + hint.width() > max_width {
@@ -184,18 +234,22 @@ pub(crate) fn short_id(id: uuid::Uuid) -> String {
     id.to_string().chars().take(8).collect()
 }
 
-pub(crate) fn text_style(app: &App) -> Style {
-    Style::default().fg(app.theme.text).bg(app.theme.background)
-}
-
-pub(crate) fn muted_style(app: &App) -> Style {
+pub(crate) fn text_style(model: &Model) -> Style {
     Style::default()
-        .fg(app.theme.muted)
-        .add_modifier(app.theme.muted_modifier)
+        .fg(model.ui.theme.text)
+        .bg(model.ui.theme.background)
 }
 
-pub(crate) fn surface_style(app: &App) -> Style {
-    Style::default().fg(app.theme.text).bg(app.theme.surface)
+pub(crate) fn muted_style(model: &Model) -> Style {
+    Style::default()
+        .fg(model.ui.theme.muted)
+        .add_modifier(model.ui.theme.muted_modifier)
+}
+
+pub(crate) fn surface_style(model: &Model) -> Style {
+    Style::default()
+        .fg(model.ui.theme.text)
+        .bg(model.ui.theme.surface)
 }
 
 pub(crate) fn blend_color(from: Color, to: Color, progress: f32) -> Color {
@@ -215,21 +269,21 @@ pub(crate) fn render_clear(frame: &mut Frame<'_>, area: Rect) {
     frame.render_widget(Clear, area);
 }
 
-pub(crate) fn field_label(app: &App, _label: &str, active: bool) -> Style {
+pub(crate) fn field_label(model: &Model, _label: &str, active: bool) -> Style {
     if active {
         Style::default()
-            .fg(app.theme.accent)
-            .add_modifier(Modifier::BOLD | app.theme.active_modifier)
+            .fg(model.ui.theme.accent)
+            .add_modifier(Modifier::BOLD | model.ui.theme.active_modifier)
     } else {
-        muted_style(app)
+        muted_style(model)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{App, Mode, ViewMode};
-    use crate::storage::JsonStore;
+    use crate::app::ViewMode;
+    use crate::theme::Theme;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -281,25 +335,32 @@ mod tests {
         assert_eq!(cards::relative_time(0, 3 * 86_400_000), "3d");
     }
 
-    #[test]
-    fn dashboard_renders_with_test_backend() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = JsonStore::new(directory.path().join("board.json"));
-        let mut app = App::new(store, false, Clock::fixed(0)).unwrap();
-        app.board
-            .add_task(0, "Write docs", "Start here", 0)
-            .unwrap();
-        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    fn render_text(model: &Model, width: u16, height: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|frame| render(frame, &app, Clock::fixed(0)))
+            .draw(|frame| render(frame, model, Clock::fixed(0)))
             .unwrap();
-        let rendered: String = terminal
+        terminal
             .backend()
             .buffer()
             .content()
             .iter()
             .map(|cell| cell.symbol())
-            .collect();
+            .collect()
+    }
+
+    fn model() -> Model {
+        Model::new(Default::default(), Theme::mocha(), false)
+    }
+
+    #[test]
+    fn dashboard_renders_with_test_backend() {
+        let mut model = model();
+        model
+            .board
+            .add_task(0, "Write docs", "Start here", 0)
+            .unwrap();
+        let rendered = render_text(&model, 100, 30);
         assert!(rendered.contains("TUI KANBAN"));
         assert!(rendered.contains("Write docs"));
         assert!(rendered.contains("Backlog"));
@@ -307,27 +368,17 @@ mod tests {
 
     #[test]
     fn all_tasks_renders_cards_and_rail() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = JsonStore::new(directory.path().join("board.json"));
-        let mut app = App::new(store, false, Clock::fixed(0)).unwrap();
-        app.board
+        let mut model = model();
+        model
+            .board
             .add_task(0, "Shape cards", "Make scanning easier", 0)
             .unwrap();
-        app.board
+        model
+            .board
             .add_task(1, "Tune navigation", "Rail and focus", 0)
             .unwrap();
-        app.view_mode = ViewMode::AllTasks;
-        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        terminal
-            .draw(|frame| render(frame, &app, Clock::fixed(0)))
-            .unwrap();
-        let rendered: String = terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        model.ui.view = ViewMode::AllTasks;
+        let rendered = render_text(&model, 120, 40);
         assert!(rendered.contains("ALL TASKS"));
         assert!(rendered.contains("COLUMNS"));
         assert!(rendered.contains("Shape cards"));
@@ -336,28 +387,23 @@ mod tests {
 
     #[test]
     fn detail_drawer_renders_metadata() {
-        let directory = tempfile::tempdir().unwrap();
-        let store = JsonStore::new(directory.path().join("board.json"));
-        let mut app = App::new(store, false, Clock::fixed(0)).unwrap();
-        let id = app
+        let mut model = model();
+        let task = model
             .board
             .add_task(0, "Inspect me", "A useful description", 0)
             .unwrap();
-        app.mode = Mode::Detail(id);
-        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
-        terminal
-            .draw(|frame| render(frame, &app, Clock::fixed(0)))
-            .unwrap();
-        let rendered: String = terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        model.ui.screens.push(Screen::Detail { task, scroll: 0 });
+        let rendered = render_text(&model, 100, 30);
         assert!(rendered.contains("Task details"));
         assert!(rendered.contains("created"));
         assert!(rendered.contains("updated"));
         assert!(rendered.contains("Inspect me"));
+    }
+
+    #[test]
+    fn tiny_terminals_get_a_too_small_screen() {
+        let rendered = render_text(&model(), 30, 8);
+        assert!(rendered.contains("Terminal too small"));
+        assert!(!rendered.contains("TUI KANBAN"));
     }
 }

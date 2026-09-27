@@ -10,7 +10,7 @@ use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Duration;
 use tempfile::TempDir;
-use tui_kanban::app::{App, FocusRegion, Mode, Toast, ToastKind, ViewMode};
+use tui_kanban::app::{App, FocusRegion, Toast, ToastKind, ViewMode};
 use tui_kanban::clock::Clock;
 use tui_kanban::domain::{Board, Column, SCHEMA_VERSION, Task};
 use tui_kanban::storage::JsonStore;
@@ -144,9 +144,8 @@ impl Harness {
         let directory = tempfile::tempdir().unwrap();
         let store = JsonStore::new(directory.path().join("board.json"));
         store.save(&board).unwrap();
-        let mut app = App::new(store, false, clock()).unwrap();
         // Tests must not depend on whether NO_COLOR is set in the environment.
-        app.theme = Theme::mocha();
+        let mut app = App::new(store, Theme::mocha(), false).unwrap();
         app.resize(100, 30);
         Self {
             _directory: directory,
@@ -171,7 +170,7 @@ impl Harness {
         self.app.resize(width, height);
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
-            .draw(|frame| tui_kanban::ui::render(frame, &self.app, clock()))
+            .draw(|frame| tui_kanban::ui::render(frame, &self.app.model, clock()))
             .unwrap();
         terminal.backend().buffer().clone()
     }
@@ -227,7 +226,7 @@ fn board_view_at_each_size() {
 fn all_tasks_view_at_each_size() {
     let mut harness = Harness::new(typical_board());
     harness.keys(&[KeyCode::Char('v')]);
-    assert_eq!(harness.app.view_mode, ViewMode::AllTasks);
+    assert_eq!(harness.app.model.ui.view, ViewMode::AllTasks);
     for (width, height) in SIZES {
         screen_snapshot!(
             format!("all_tasks_{width}x{height}"),
@@ -242,7 +241,7 @@ fn all_tasks_view_at_each_size() {
 fn rail_focused() {
     let mut harness = Harness::new(typical_board());
     harness.keys(&[KeyCode::Tab, KeyCode::Char('j')]);
-    assert_eq!(harness.app.focus, FocusRegion::Rail);
+    assert_eq!(harness.app.model.ui.focus, FocusRegion::Rail);
     screen_snapshot!("rail_focused_100x30", harness, 100, 30);
 }
 
@@ -284,7 +283,7 @@ fn help_overlay() {
     harness.keys(&[KeyCode::Char('j'); 30]);
     screen_snapshot!("help_60x20_scrolled_to_end", harness, 60, 20);
     harness.keys(&[KeyCode::Char('x')]);
-    assert!(matches!(harness.app.mode, Mode::Dashboard));
+    assert!(harness.app.model.ui.screens.is_empty());
 }
 
 #[test]
@@ -306,7 +305,7 @@ fn search_active() {
 #[test]
 fn toast_showing() {
     let mut harness = Harness::new(typical_board());
-    harness.app.toast = Some(Toast {
+    harness.app.model.session.toast = Some(Toast {
         message: "Task saved".to_owned(),
         kind: ToastKind::Success,
         expires_at: clock().instant + Duration::from_secs(3),
@@ -347,7 +346,7 @@ fn tiny_terminal() {
 #[test]
 fn no_color_uses_no_colours() {
     let mut harness = Harness::new(typical_board());
-    harness.app.theme = Theme::monochrome();
+    harness.app.model.ui.theme = Theme::monochrome();
     insta::assert_debug_snapshot!("no_color_60x20", harness.render(60, 20));
 }
 
@@ -364,13 +363,13 @@ fn keys_create_a_task_and_move_it() {
         .type_text("Before Friday")
         .keys(&[KeyCode::Enter, KeyCode::Char('L')]);
 
-    let board = &harness.app.board;
+    let board = &harness.app.model.board;
     assert_eq!(board.task_count(), 8);
     let created = board.columns[1].tasks.last().unwrap();
     assert_eq!(created.title, "Ship it");
     assert_eq!(created.description, "Before Friday");
     assert_eq!(created.created_at, NOW);
-    assert_eq!(harness.app.selected_task_id(), Some(created.id));
+    assert_eq!(harness.app.model.selected_task_id(), Some(created.id));
 
     // The change was saved, too.
     let saved = harness.app.store.load().unwrap().unwrap();
@@ -382,7 +381,7 @@ fn keys_create_a_task_and_move_it() {
 fn keys_delete_after_confirmation() {
     let mut harness = Harness::new(typical_board());
     harness.keys(&[KeyCode::Char('j'), KeyCode::Char('d'), KeyCode::Char('y')]);
-    let titles: Vec<&str> = harness.app.board.columns[0]
+    let titles: Vec<&str> = harness.app.model.board.columns[0]
         .tasks
         .iter()
         .map(|task| task.title.as_str())

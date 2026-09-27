@@ -2,7 +2,7 @@ use super::cards;
 use super::muted_style;
 use super::{render_clear, short_id, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
-use crate::app::App;
+use crate::app::Model;
 use crate::clock::Clock;
 use crate::command::Context;
 use ratatui::Frame;
@@ -14,8 +14,9 @@ use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 pub(crate) fn render(
     frame: &mut Frame<'_>,
     area: Rect,
-    app: &App,
+    model: &Model,
     task_id: uuid::Uuid,
+    scroll: u16,
     clock: Clock,
 ) {
     let full_width = if area.width < 56 {
@@ -23,7 +24,8 @@ pub(crate) fn render(
     } else {
         (area.width * 2 / 5).clamp(32, 58)
     };
-    let progress = app
+    let progress = model
+        .ui
         .animations
         .progress(AnimationKind::Drawer, clock.instant)
         .map(ease_out_cubic)
@@ -41,12 +43,12 @@ pub(crate) fn render(
     render_clear(frame, drawer);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(app.theme.accent))
-        .style(surface_style(app))
+        .border_style(Style::default().fg(model.ui.theme.accent))
+        .style(surface_style(model))
         .title(Span::styled(
             " Task details ",
             Style::default()
-                .fg(app.theme.accent)
+                .fg(model.ui.theme.accent)
                 .add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(drawer);
@@ -55,15 +57,15 @@ pub(crate) fn render(
         return;
     }
 
-    let Some(task) = app.board.task(task_id) else {
+    let Some(task) = model.board.task(task_id) else {
         frame.render_widget(
             Paragraph::new("This task no longer exists.")
-                .style(muted_style(app).bg(app.theme.surface)),
+                .style(muted_style(model).bg(model.ui.theme.surface)),
             inner,
         );
         return;
     };
-    let column_name = app
+    let column_name = model
         .board
         .columns
         .iter()
@@ -87,19 +89,19 @@ pub(crate) fn render(
         Paragraph::new(Line::from(Span::styled(
             format!(" {}", task.title),
             Style::default()
-                .fg(app.theme.text)
+                .fg(model.ui.theme.text)
                 .add_modifier(Modifier::BOLD),
         )))
-        .style(surface_style(app))
+        .style(surface_style(model))
         .wrap(Wrap { trim: true }),
         sections[0],
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             format!(" {}  •  {}", column_name, short_id(task.id)),
-            Style::default().fg(app.theme.accent_alt),
+            Style::default().fg(model.ui.theme.accent_alt),
         )))
-        .style(surface_style(app)),
+        .style(surface_style(model)),
         sections[1],
     );
 
@@ -110,16 +112,16 @@ pub(crate) fn render(
     };
     let description_style = Style::default()
         .fg(if task.description.trim().is_empty() {
-            app.theme.muted
+            model.ui.theme.muted
         } else {
-            app.theme.text
+            model.ui.theme.text
         })
-        .bg(app.theme.surface);
+        .bg(model.ui.theme.surface);
     frame.render_widget(
         Paragraph::new(description)
             .style(description_style)
             .wrap(Wrap { trim: true })
-            .scroll((app.detail_scroll, 0)),
+            .scroll((scroll, 0)),
         sections[2],
     );
 
@@ -129,7 +131,7 @@ pub(crate) fn render(
                 " created {}",
                 cards::relative_time(task.created_at, clock.wall_millis)
             ),
-            muted_style(app),
+            muted_style(model),
         )),
         Line::from(Span::styled(
             format!(
@@ -137,12 +139,12 @@ pub(crate) fn render(
                 cards::relative_time(task.updated_at, clock.wall_millis),
                 short_id(task.id)
             ),
-            muted_style(app),
+            muted_style(model),
         )),
     ];
     frame.render_widget(
         Paragraph::new(metadata)
-            .style(surface_style(app))
+            .style(surface_style(model))
             .wrap(Wrap { trim: true }),
         sections[3],
     );
@@ -150,11 +152,15 @@ pub(crate) fn render(
         Paragraph::new(Line::from(Span::styled(
             format!(
                 " {}",
-                super::hint_text(app, Context::Detail, inner.width.saturating_sub(1) as usize)
+                super::hint_text(
+                    model,
+                    Context::Detail,
+                    inner.width.saturating_sub(1) as usize
+                )
             ),
-            muted_style(app),
+            muted_style(model),
         )))
-        .style(surface_style(app))
+        .style(surface_style(model))
         .wrap(Wrap { trim: true }),
         sections[4],
     );
