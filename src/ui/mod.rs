@@ -14,6 +14,8 @@ use ratatui::style::Color;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub fn render(frame: &mut Frame<'_>, app: &App, clock: Clock) {
     let area = frame.area();
@@ -147,31 +149,29 @@ pub(crate) fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
+/// Cuts `text` to at most `max_width` terminal cells, ending with "…" when
+/// anything was removed. Text that fits is returned unchanged. Works on
+/// grapheme clusters, so combining marks stay with their base character
+/// and wide characters are never split.
 pub(crate) fn truncate_text(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width {
+        return text.to_owned();
+    }
     if max_width == 0 {
         return String::new();
     }
-    if max_width == 1 {
-        return text
-            .chars()
-            .next()
-            .map(|character| character.to_string())
-            .unwrap_or_default();
-    }
-    let limit = max_width - 1;
-    let mut result = String::new();
-    for character in text.chars() {
-        let character_width = Line::from(character.to_string()).width();
-        if Line::from(result.clone())
-            .width()
-            .saturating_add(character_width)
-            > limit
-        {
-            result.push('…');
+    let budget = max_width - 1;
+    let mut result = String::with_capacity(text.len().min(max_width * 4));
+    let mut used = 0;
+    for grapheme in text.graphemes(true) {
+        let width = grapheme.width();
+        if used + width > budget {
             break;
         }
-        result.push(character);
+        used += width;
+        result.push_str(grapheme);
     }
+    result.push('…');
     result
 }
 
@@ -225,8 +225,42 @@ mod tests {
     #[test]
     fn truncation_respects_the_requested_width() {
         assert_eq!(truncate_text("abcdef", 4), "abc…");
-        assert_eq!(truncate_text("abc", 1), "a");
+        assert_eq!(truncate_text("abc", 1), "…");
         assert_eq!(truncate_text("abc", 0), "");
+        assert_eq!(truncate_text("", 0), "");
+    }
+
+    #[test]
+    fn truncation_keeps_text_that_fits_exactly() {
+        assert_eq!(truncate_text("abcd", 4), "abcd");
+        assert_eq!(truncate_text("abcd", 5), "abcd");
+        assert_eq!(truncate_text("日本", 4), "日本");
+    }
+
+    #[test]
+    fn truncation_measures_wide_characters() {
+        // Each CJK character is two cells wide.
+        assert_eq!(truncate_text("日本語", 5), "日本…");
+        assert_eq!(truncate_text("日本語", 4), "日…");
+        // A two-cell character never overflows a one-cell budget.
+        assert_eq!(truncate_text("日本", 1), "…");
+        assert_eq!(truncate_text("a🦀b", 3), "a…");
+    }
+
+    #[test]
+    fn truncation_keeps_combining_marks_with_their_base() {
+        // "e" + combining acute accent is one cell wide.
+        let text = "e\u{301}e\u{301}e\u{301}";
+        assert_eq!(truncate_text(text, 3), text);
+        assert_eq!(truncate_text(text, 2), "e\u{301}…");
+    }
+
+    #[test]
+    fn truncation_handles_long_text_quickly() {
+        let text = "x".repeat(100_000);
+        let cut = truncate_text(&text, 50_000);
+        assert_eq!(cut.width(), 50_000);
+        assert!(cut.ends_with('…'));
     }
 
     #[test]

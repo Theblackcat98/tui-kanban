@@ -14,9 +14,9 @@ expression: "harness.screen(100, 30)"
    Stage 7 1        │                                                                              │
    Stage 8 1        │                                                                              │
    Stage 9 1        │                                                                              │
-   Stage 1…1        │                                                                              │
-   Stage 1…1        │                                                                              │
-   Stage 1…1        │                                                                              │
+   Stage 101        │                                                                              │
+   Stage 111        │                                                                              │
+   Stage 121        │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
