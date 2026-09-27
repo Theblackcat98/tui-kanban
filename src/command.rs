@@ -209,6 +209,11 @@ pub enum CommandId {
     Search,
     ClearSearch,
     ApplySearch,
+    SearchDown,
+    SearchUp,
+    NextMatch,
+    PreviousMatch,
+    RemoveFilterTerm,
     ScrollUp,
     ScrollDown,
     ToggleItem,
@@ -760,6 +765,22 @@ pub const COMMANDS: &[Command] = &[
         ]),
     )
     .hint(0, "clear"),
+    Command::new(C::NextMatch, &[ctrl('n')], "next match", G::Tasks, CARDS)
+        .pair(C::PreviousMatch, "next / previous match"),
+    Command::new(
+        C::PreviousMatch,
+        &[ctrl('p')],
+        "previous match",
+        G::Tasks,
+        CARDS,
+    ),
+    Command::new(
+        C::RemoveFilterTerm,
+        &[key(KeyCode::Backspace)],
+        "remove the last filter term",
+        G::Tasks,
+        DASHBOARD,
+    ),
     // Details
     Command::new(
         C::ScrollUp,
@@ -833,6 +854,22 @@ pub const COMMANDS: &[Command] = &[
         only(Context::Search),
     )
     .hint(1, "apply"),
+    Command::new(
+        C::SearchDown,
+        &[key(KeyCode::Down), ctrl('n')],
+        "search: next match",
+        G::Editing,
+        only(Context::Search),
+    )
+    .hint(2, "match")
+    .pair(C::SearchUp, "search: next / previous match"),
+    Command::new(
+        C::SearchUp,
+        &[key(KeyCode::Up), ctrl('p')],
+        "search: previous match",
+        G::Editing,
+        only(Context::Search),
+    ),
     Command::new(
         C::NextField,
         &[key(KeyCode::Tab), key(KeyCode::BackTab)],

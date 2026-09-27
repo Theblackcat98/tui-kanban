@@ -250,6 +250,18 @@ impl Updater<'_> {
                 }
             }
             CommandId::ApplySearch => self.model.ui.search.input = None,
+            CommandId::SearchDown | CommandId::NextMatch => self.step_match(1),
+            CommandId::SearchUp | CommandId::PreviousMatch => self.step_match(-1),
+            CommandId::RemoveFilterTerm => {
+                let query = &self.model.ui.search.query;
+                let kept = query
+                    .trim_end()
+                    .rsplit_once(char::is_whitespace)
+                    .map_or("", |(rest, _)| rest)
+                    .trim_end()
+                    .to_owned();
+                self.set_query(kept);
+            }
             CommandId::ScrollUp => self.scroll_detail(-10),
             CommandId::ScrollDown => self.scroll_detail(10),
             CommandId::LineUp => self.scroll_detail(-1),
@@ -303,8 +315,8 @@ impl Updater<'_> {
     fn edit(&mut self, key: &ratatui::crossterm::event::KeyEvent) {
         if let Some(input) = &mut self.model.ui.search.input {
             if input.handle_key(key) {
-                self.model.ui.search.query = input.value.clone();
-                self.model.reconcile_selection();
+                let query = input.value.clone();
+                self.set_query(query);
             }
         } else {
             match self.model.ui.screens.last_mut() {
@@ -399,12 +411,50 @@ impl Updater<'_> {
         }
     }
 
+    fn set_query(&mut self, query: String) {
+        self.model
+            .ui
+            .search
+            .set_query(query, self.clock.wall_millis);
+        self.model.reconcile_selection();
+        // With nothing matching in the active lane, go to the first match
+        // anywhere rather than leave the focus on an empty lane.
+        if self.model.selected_task_id().is_none()
+            && let Some(first) = self.model.visible_tasks().first()
+        {
+            self.model.select_task(first.id);
+        }
+    }
+
+    /// Selects the next (or previous) match in board order, across every
+    /// lane, wrapping around.
+    fn step_match(&mut self, direction: isize) {
+        let matches = self.model.visible_tasks();
+        if matches.is_empty() {
+            return;
+        }
+        let next = match self
+            .model
+            .selected_task_id()
+            .and_then(|id| matches.iter().position(|task| task.id == id))
+        {
+            Some(current) => {
+                (current as isize + direction).rem_euclid(matches.len() as isize) as usize
+            }
+            None if direction > 0 => 0,
+            None => matches.len() - 1,
+        };
+        self.model.select_task(matches[next].id);
+        self.model.ui.focus = FocusRegion::Cards;
+        self.animate(AnimationKind::Selection, 100);
+    }
+
     /// Pasted text goes into whichever input is being typed in.
     fn paste(&mut self, text: &str) {
         if let Some(input) = &mut self.model.ui.search.input {
             input.insert_str(&text.replace(['\n', '\r'], " "));
-            self.model.ui.search.query = input.value.clone();
-            self.model.reconcile_selection();
+            let query = input.value.clone();
+            self.set_query(query);
             return;
         }
         match self.model.ui.screens.last_mut() {

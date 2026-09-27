@@ -18,6 +18,39 @@ use crate::app::Model;
 use crate::clock::Clock;
 use crate::domain::Task;
 use crate::markdown;
+use unicode_segmentation::UnicodeSegmentation;
+
+/// A line with the graphemes at `matched` in `highlight`.
+fn highlighted(text: &str, matched: &[usize], style: Style, highlight: Style) -> Line<'static> {
+    if matched.is_empty() {
+        return Line::from(Span::styled(text.to_owned(), style));
+    }
+    let mut spans: Vec<Span> = Vec::new();
+    let mut run = String::new();
+    let mut run_matched = false;
+    for (index, grapheme) in text.graphemes(true).enumerate() {
+        let is_match = matched.contains(&index);
+        if is_match != run_matched && !run.is_empty() {
+            let run_style = if run_matched {
+                style.patch(highlight)
+            } else {
+                style
+            };
+            spans.push(Span::styled(std::mem::take(&mut run), run_style));
+        }
+        run_matched = is_match;
+        run.push_str(grapheme);
+    }
+    if !run.is_empty() {
+        let run_style = if run_matched {
+            style.patch(highlight)
+        } else {
+            style
+        };
+        spans.push(Span::styled(run, run_style));
+    }
+    Line::from(spans)
+}
 
 /// Draws a card into `area`, which may be shorter than the card if it is
 /// cut off at the bottom of a list.
@@ -73,18 +106,45 @@ pub(crate) fn render(
     }
 
     let text = card_text(task, area.width);
-    let mut lines: Vec<Line> = text
-        .title
-        .into_iter()
-        .map(|title| {
-            Line::from(Span::styled(
-                title,
-                fg(theme.text).add_modifier(Modifier::BOLD),
-            ))
-        })
-        .collect();
+    let filter = &model.ui.search.filter;
+    let highlight = if theme.is_monochrome() {
+        Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    } else {
+        fg(theme.accent).add_modifier(Modifier::BOLD)
+    };
+    let title_style = fg(theme.text).add_modifier(Modifier::BOLD);
+    // Matches are found in the title with its spaces collapsed, which is
+    // what the wrapped lines are cut from.
+    let normalised = task.title.split_whitespace().collect::<Vec<_>>().join(" ");
+    let title_matches = if filter.is_empty() {
+        Vec::new()
+    } else {
+        filter.title_highlights(&normalised)
+    };
+    let graphemes: Vec<&str> = normalised.graphemes(true).collect();
+    let mut offset = 0;
+    let mut lines: Vec<Line> = Vec::new();
+    for title in text.title {
+        let count = title.graphemes(true).count();
+        let matched: Vec<usize> = title_matches
+            .iter()
+            .filter(|index| (offset..offset + count).contains(*index))
+            .map(|index| index - offset)
+            .collect();
+        lines.push(highlighted(&title, &matched, title_style, highlight));
+        offset += count;
+        // A line break at a space drops that space.
+        if graphemes.get(offset) == Some(&" ") {
+            offset += 1;
+        }
+    }
     if let Some(description) = text.description {
-        lines.push(Line::from(Span::styled(description, muted(model))));
+        let matched = if filter.is_empty() {
+            Vec::new()
+        } else {
+            filter.description_highlights(&description)
+        };
+        lines.push(highlighted(&description, &matched, muted(model), highlight));
     }
     let mut meta = vec![Span::styled(
         format!("◷ {}", relative_time(task.updated_at, clock.wall_millis)),

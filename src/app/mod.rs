@@ -559,6 +559,48 @@ mod tests {
     }
 
     #[test]
+    fn arrows_move_through_matches_while_typing() {
+        // #28: ↑/↓ and Ctrl+N/Ctrl+P used to do nothing until Enter.
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "Fix the login bug");
+        add(&mut app, 0, "Write docs");
+        let second = add(&mut app, 2, "Fix typo");
+        press(&mut app, &[KeyCode::Char('/')]);
+        type_text(&mut app, "fix");
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        press(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        assert_eq!(app.model.ui.active_column, 2);
+        assert!(app.model.ui.search.is_typing());
+        // It wraps around.
+        press(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        // After applying, Ctrl+N / Ctrl+P do the same.
+        press(&mut app, &[KeyCode::Enter]);
+        let ctrl = |character| KeyEvent::new(KeyCode::Char(character), KeyModifiers::CONTROL);
+        app.handle_key(ctrl('p'), clock());
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        app.handle_key(ctrl('n'), clock());
+        assert_eq!(app.model.selected_task_id(), Some(first));
+    }
+
+    #[test]
+    fn backspace_removes_the_last_filter_term() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Fix the login bug");
+        add(&mut app, 1, "Fix typo");
+        press(&mut app, &[KeyCode::Char('/')]);
+        type_text(&mut app, "in:backlog fix");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.visible_tasks().len(), 1);
+        press(&mut app, &[KeyCode::Backspace]);
+        assert_eq!(app.model.ui.search.query, "in:backlog");
+        press(&mut app, &[KeyCode::Backspace]);
+        assert_eq!(app.model.ui.search.query, "");
+        assert_eq!(app.model.visible_tasks().len(), 2);
+    }
+
+    #[test]
     fn moving_a_task_changes_column_and_selection() {
         let (_directory, mut app) = test_app();
         let id = add(&mut app, 0, "Move me");

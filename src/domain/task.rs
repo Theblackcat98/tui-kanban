@@ -31,13 +31,6 @@ impl Task {
     pub fn touch(&mut self, now: i64) {
         self.updated_at = now;
     }
-
-    pub fn matches(&self, query: &str) -> bool {
-        let query = query.trim().to_lowercase();
-        query.is_empty()
-            || self.title.to_lowercase().contains(&query)
-            || self.description.to_lowercase().contains(&query)
-    }
 }
 
 #[cfg(test)]
@@ -53,14 +46,5 @@ mod tests {
         assert_eq!(task.description, "New description");
         assert_eq!(task.created_at, 1_000);
         assert_eq!(task.updated_at, 2_000);
-    }
-
-    #[test]
-    fn matching_is_case_insensitive() {
-        let task = Task::new("Build UI", "Catppuccin colors", 0);
-        assert!(task.matches("catppuccin"));
-        assert!(task.matches("UI"));
-        assert!(!task.matches("database"));
-        assert!(task.matches(""));
     }
 }

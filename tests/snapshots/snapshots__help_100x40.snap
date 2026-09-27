@@ -4,16 +4,15 @@ expression: "harness.screen(100, 40)"
 ---
  Snapshot Board   Board · All tasks
 
-  Columns              Backlog  3                In Progress  2            Done  2
-                       ╭ Keys · Board ──────────────────────────────────────╮▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
- ▌ Backlog         3   │ Navigation                                         │
-   In Progress     2   │   h/l  ←/→            previous / next column       │Set up CI
-   Done            2   │   j/k  ↓/↑            next / previous card         │fmt, clippy and test…
-                       │   PgUp/PgDn           up / down five cards or rows │◷ 5h ago
-                       │   Home/End  g g/G     first / last card            │
-                       │   1–9                 lane by its number           │Snapshot tests
-                       │   g + letter          lane by its initial          │◷ 1d ago
-                       │   Tab / Shift+Tab     focus rail / cards           │
+  Columns              ╭ Keys · Board ──────────────────────────────────────╮ne  2
+                       │ Navigation                                         │▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         3   │   h/l  ←/→            previous / next column       │
+   In Progress     2   │   j/k  ↓/↑            next / previous card         │Set up CI
+   Done            2   │   PgUp/PgDn           up / down five cards or rows │fmt, clippy and test…
+                       │   Home/End  g g/G     first / last card            │◷ 5h ago
+                       │   1–9                 lane by its number           │
+                       │   g + letter          lane by its initial          │Snapshot tests
+                       │   Tab / Shift+Tab     focus rail / cards           │◷ 1d ago
                        │   v                   Board / All tasks            │
                        │                                                    │
                        │ Tasks                                              │
@@ -30,6 +29,8 @@ expression: "harness.screen(100, 40)"
                        │   u/U  Ctrl+Z/Ctrl+R  undo / redo                  │
                        │   /                   search                       │
                        │   Esc                 back / clear search          │
+                       │   Ctrl+N/Ctrl+P       next / previous match        │
+                       │   Backspace           remove the last filter term  │
                        │                                                    │
                        │ General                                            │
                        │   ?                   this help                    │
@@ -38,7 +39,6 @@ expression: "harness.screen(100, 40)"
                        │                                                    │
                        │ j/k scroll   Esc close                             │
                        ╰────────────────────────────────────────────────────╯
-
 
 
  HELP   ● saved   j/k scroll   Esc close

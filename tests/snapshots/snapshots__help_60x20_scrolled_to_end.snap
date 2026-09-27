@@ -4,15 +4,15 @@ expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
    ╭ Keys · Board ──────────────────────────────────────╮
- Ba│   y                   duplicate task               │
- ▔▔│   m                   move to…                     │▔▔
-   │   E                   edit description in $EDITOR  │
- ▌ │   d                   delete task                  │
- ▌ │   H/L                 move task left / right       │
+ Ba│   E                   edit description in $EDITOR  │
+ ▔▔│   d                   delete task                  │▔▔
+   │   H/L                 move task left / right       │
  ▌ │   J/K                 move task down / up          │
-   │   u/U  Ctrl+Z/Ctrl+R  undo / redo                  │
- ▎ │   /                   search                       │
- ▎ │   Esc                 back / clear search          │
+ ▌ │   u/U  Ctrl+Z/Ctrl+R  undo / redo                  │
+ ▌ │   /                   search                       │
+   │   Esc                 back / clear search          │
+ ▎ │   Ctrl+N/Ctrl+P       next / previous match        │
+ ▎ │   Backspace           remove the last filter term  │
  ▎ │                                                    │
    │ General                                            │
  ▎ │   ?                   this help                    │

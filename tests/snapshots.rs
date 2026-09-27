@@ -553,3 +553,40 @@ fn markdown_description_with_a_checklist() {
     harness.keys(&[KeyCode::Enter, KeyCode::Tab]);
     screen_snapshot!("markdown_detail_100x30", harness, 100, 30);
 }
+
+// Search (#47, #28)
+
+#[test]
+fn search_with_filter_terms() {
+    let mut harness = Harness::new(typical_board());
+    harness
+        .keys(&[KeyCode::Char('/')])
+        .type_text("in:progress updated:<1d cmd");
+    screen_snapshot!("search_terms_typing_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Enter]);
+    screen_snapshot!("search_terms_applied_100x30", harness, 100, 30);
+    screen_snapshot!("search_terms_applied_60x20", harness, 60, 20);
+}
+
+#[test]
+fn search_highlights_matched_characters() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char('/')]).type_text("rdme");
+    let buffer = harness.render(100, 30);
+    let accent = harness.app.model.ui.theme.accent;
+    // "Write the README" in the first lane: R, M and E are matched.
+    let row: String = (0..100)
+        .map(|x| buffer[(x, 6)].symbol().to_owned())
+        .collect();
+    let byte = row.find("Write the README").expect("the card is shown");
+    let start = row[..byte].chars().count() as u16;
+    let colours: Vec<bool> = (0..16)
+        .map(|x| buffer[(start + x, 6)].fg == accent)
+        .collect();
+    let expected: Vec<bool> = "Write the README"
+        .chars()
+        .enumerate()
+        .map(|(index, _)| [10, 13, 14, 15].contains(&index))
+        .collect();
+    assert_eq!(colours, expected, "{row}");
+}

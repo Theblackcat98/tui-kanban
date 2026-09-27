@@ -84,9 +84,23 @@ Below 40×12 the app shows a "terminal too small" screen and only quits.
 ### Top bar
 
 `Board name   Board · All tasks` on the left, with the current view in
-the accent colour. While searching, the search box sits on the right
-and grows with the query; an applied filter shows as `/ query · N
-matches`.
+the accent colour.
+
+### Filter bar
+
+While a search is active, a row below the top bar holds it, with the
+match count on the right (`3 of 12`). While typing it is the search box,
+across the whole row; once applied (Enter), each term is a chip
+(`in:progress ×`) and Backspace removes the last one.
+
+Text matches a title fuzzily (letters in order, ignoring case and
+accents) or a description as written; `in:column`, `#tag`,
+`updated:<7d` / `>2w` / `today` and `created:…` filter by column,
+hashtag and time, and fzf's `'exact`, `^prefix`, `suffix$` and `!not`
+work too. The matched letters are highlighted on cards in bold
+`accent` (bold and underlined without colour). While typing, ↓/↑ (or
+Ctrl+N/Ctrl+P) move through the matches across all lanes; after
+applying, Ctrl+N/Ctrl+P do.
 
 ### Status line
 

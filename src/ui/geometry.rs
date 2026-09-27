@@ -22,6 +22,8 @@ pub(crate) struct Page {
     pub main: Rect,
     /// Where the detail drawer goes, while one is open.
     pub drawer: Option<Rect>,
+    /// The filter bar, below the top bar while searching.
+    pub filter: Option<Rect>,
     /// The first-run tip, above the status line, while it shows.
     pub tip: Option<Rect>,
     pub status: Rect,
@@ -45,11 +47,20 @@ pub(crate) fn page(model: &Model, area: Rect) -> Page {
             1.min(area.height),
         )
     });
+    let filter_rows = u16::from(model.ui.search.is_active());
+    let filter = model.ui.search.is_active().then(|| {
+        Rect::new(
+            area.x,
+            area.y.saturating_add(1),
+            area.width,
+            1.min(area.height),
+        )
+    });
     let body = Rect::new(
         area.x,
-        area.y.saturating_add(1),
+        area.y.saturating_add(1 + filter_rows),
         area.width,
-        area.height.saturating_sub(2 + tip_rows),
+        area.height.saturating_sub(2 + tip_rows + filter_rows),
     );
     let (rail, rest) = if breakpoint.shows_rail() {
         let (rail, rest) = split_left(body, RAIL_WIDTH);
@@ -81,6 +92,7 @@ pub(crate) fn page(model: &Model, area: Rect) -> Page {
         rail,
         main,
         drawer,
+        filter,
         tip,
         status,
     }

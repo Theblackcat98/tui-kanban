@@ -13,7 +13,7 @@ use super::history::History;
 use super::input::TextInput;
 use crate::animation::{AnimationEngine, AnimationSettings};
 use crate::command::{CommandId, Context};
-use crate::domain::{Board, Task};
+use crate::domain::{Board, Filter, Task};
 use crate::layout::{self, Breakpoint};
 use crate::theme::Theme;
 
@@ -81,8 +81,10 @@ pub struct Pending {
 
 #[derive(Clone, Debug, Default)]
 pub struct Search {
-    /// The filter applied to the board.
+    /// The filter applied to the board, as typed.
     pub query: String,
+    /// The query, parsed. Set with [`Search::set_query`].
+    pub filter: Filter,
     /// The search box, while the user is typing in it.
     pub input: Option<TextInput>,
 }
@@ -94,6 +96,13 @@ impl Search {
 
     pub fn is_active(&self) -> bool {
         self.is_typing() || !self.query.is_empty()
+    }
+
+    /// Changes the query, resolving times such as `updated:<7d` against
+    /// `now` (Unix milliseconds).
+    pub fn set_query(&mut self, query: String, now: i64) {
+        self.filter = Filter::parse(&query, now);
+        self.query = query;
     }
 }
 
@@ -254,6 +263,10 @@ impl Model {
     pub fn command_enabled(&self, id: CommandId) -> bool {
         match id {
             CommandId::ClearSearch => self.ui.search.is_active(),
+            CommandId::NextMatch | CommandId::PreviousMatch => !self.ui.search.query.is_empty(),
+            CommandId::RemoveFilterTerm => {
+                !self.ui.search.query.is_empty() && !self.ui.search.is_typing()
+            }
             CommandId::JumpToLane | CommandId::GoToLane => self.board.columns.len() > 1,
             CommandId::ToggleItem | CommandId::NextItem | CommandId::PreviousItem => {
                 matches!(
@@ -295,20 +308,24 @@ impl Model {
         self.ui.selected.filter(|id| self.board.task(*id).is_some())
     }
 
-    fn matches(&self, task: &Task) -> bool {
-        task.matches(&self.ui.search.query)
+    fn matches(&self, column: usize, task: &Task) -> bool {
+        self.ui.search.filter.is_empty()
+            || self
+                .ui
+                .search
+                .filter
+                .matches(task, &self.board.columns[column])
     }
 
     pub fn visible_task_indices(&self, column: usize) -> Vec<usize> {
         self.board
             .columns
             .get(column)
-            .map(|column| {
-                column
-                    .tasks
+            .map(|data| {
+                data.tasks
                     .iter()
                     .enumerate()
-                    .filter(|(_, task)| self.matches(task))
+                    .filter(|(_, task)| self.matches(column, task))
                     .map(|(index, _)| index)
                     .collect()
             })
@@ -325,7 +342,7 @@ impl Model {
                     .tasks
                     .iter()
                     .enumerate()
-                    .filter(|(_, task)| self.matches(task))
+                    .filter(move |(_, task)| self.matches(column_index, task))
                     .map(move |(task_index, task)| VisibleTask {
                         column: column_index,
                         task: task_index,
@@ -385,8 +402,8 @@ impl Model {
         }
         self.ui.active_column = self.ui.active_column.min(self.board.columns.len() - 1);
         if let Some(id) = self.ui.selected
-            && let Some(task) = self.board.task(id)
-            && self.matches(task)
+            && let Some((column, index)) = self.board.task_location(id)
+            && self.matches(column, &self.board.columns[column].tasks[index])
         {
             self.select_task(id);
             return;

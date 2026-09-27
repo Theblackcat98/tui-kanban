@@ -12,13 +12,9 @@ use crate::app::{Model, SaveState, ToastKind, ViewMode};
 use crate::clock::Clock;
 use crate::command::{self, Context};
 
-const SEARCH_MIN_WIDTH: usize = 16;
-
 pub(crate) fn render_top(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     let theme = &model.ui.theme;
     fill(frame, area, Style::default().bg(theme.panel));
-    let right_width = render_search(frame, area, model);
-
     let view = |label: &'static str, current: bool| {
         if current {
             Span::styled(label, fg(theme.accent).add_modifier(Modifier::BOLD))
@@ -33,7 +29,7 @@ pub(crate) fn render_top(frame: &mut Frame<'_>, area: Rect, model: &Model) {
         view("All tasks", model.ui.view == ViewMode::AllTasks),
     ];
     let views_width: usize = views.iter().map(Span::width).sum();
-    let room = (area.width as usize).saturating_sub(right_width + 2);
+    let room = (area.width as usize).saturating_sub(2);
     let name_room = room.saturating_sub(views_width).max(room.min(12));
     let mut spans = vec![Span::styled(
         truncate_text(&model.board.name, name_room),
@@ -45,26 +41,44 @@ pub(crate) fn render_top(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     put(frame, area.x + 1, area.y, room as u16, Line::from(spans));
 }
 
-/// Draws the search box or the applied filter on the right of the top
-/// bar, and returns how many cells it took.
-fn render_search(frame: &mut Frame<'_>, area: Rect, model: &Model) -> usize {
+/// The filter bar, below the top bar while a search is active: the search
+/// box while typing, or the applied terms as chips, and the match count.
+///
+/// ```text
+/// / in:progress card▏                              2 of 7
+///   in:progress ×  card ×   Backspace remove       2 of 7
+/// ```
+pub(crate) fn render_filter(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     let theme = &model.ui.theme;
     let search = &model.ui.search;
-    let max_width = (area.width / 2) as usize;
+    fill(frame, area, Style::default().bg(theme.bg));
+    let count = format!(
+        "{} of {}",
+        model.visible_tasks().len(),
+        model.board.task_count()
+    );
+    let count_width = text::width(&count) as u16;
+    put(
+        frame,
+        area.right().saturating_sub(count_width + 1),
+        area.y,
+        count_width,
+        Line::from(Span::styled(count, faint(model))),
+    );
+    let room = area.width.saturating_sub(count_width + 4);
+    let x = area.x + 1;
+    put(
+        frame,
+        x,
+        area.y,
+        2,
+        Line::from(Span::styled(
+            "/ ",
+            fg(theme.accent).add_modifier(Modifier::BOLD),
+        )),
+    );
+    let field = Rect::new(x + 2, area.y, room.saturating_sub(2), 1);
     if let Some(input) = &search.input {
-        let box_width = (text::width(&input.value) + 2)
-            .max(SEARCH_MIN_WIDTH)
-            .min(max_width.saturating_sub(2));
-        let (visible, cursor) = input_view(&input.value, input.cursor, box_width - 2);
-        let box_x = area.right().saturating_sub(1 + box_width as u16);
-        put(
-            frame,
-            box_x.saturating_sub(2),
-            area.y,
-            2,
-            Line::from(Span::styled("/ ", fg(theme.accent))),
-        );
-        let field = Rect::new(box_x, area.y, box_width as u16, 1);
         fill(
             frame,
             field,
@@ -72,39 +86,55 @@ fn render_search(frame: &mut Frame<'_>, area: Rect, model: &Model) -> usize {
                 .bg(theme.surface)
                 .add_modifier(theme.active_modifier),
         );
+        let inner = field.width.saturating_sub(2);
+        if input.value.is_empty() {
+            put(
+                frame,
+                field.x + 1,
+                area.y,
+                inner,
+                Line::from(Span::styled(
+                    "text, in:column, #tag, updated:<7d",
+                    faint(model),
+                )),
+            );
+            frame.set_cursor_position((field.x + 1, area.y));
+            return;
+        }
+        let (visible, cursor) = input_view(&input.value, input.cursor, inner as usize);
         put(
             frame,
-            box_x + 1,
+            field.x + 1,
             area.y,
-            box_width as u16 - 2,
+            inner,
             Line::from(Span::styled(visible, fg(theme.text))),
         );
-        frame.set_cursor_position((box_x + 1 + cursor as u16, area.y));
-        return box_width + 3;
+        frame.set_cursor_position((field.x + 1 + cursor as u16, area.y));
+        return;
     }
-    if search.query.is_empty() {
-        return 0;
+    // Applied: each term as a chip, as many as fit.
+    let chip = Style::default().bg(theme.surface).fg(theme.text);
+    let mut spans = Vec::new();
+    let mut used = 0;
+    let terms: Vec<&str> = search.filter.terms().map(|(text, _)| text).collect();
+    for (index, term) in terms.iter().enumerate() {
+        let label = format!(" {term} ×");
+        let width = text::width(&label) + 2;
+        if used + width > field.width as usize {
+            let hidden = terms.len() - index;
+            spans.push(Span::styled(format!("+{hidden}"), faint(model)));
+            break;
+        }
+        spans.push(Span::styled(format!(" {term}"), chip));
+        spans.push(Span::styled(" × ", chip.fg(theme.text_faint)));
+        spans.push(Span::raw(" "));
+        used += width;
     }
-    let matches = model.visible_tasks().len();
-    let suffix = format!(
-        " · {matches} {}",
-        if matches == 1 { "match" } else { "matches" }
-    );
-    let query_room = max_width.saturating_sub(2 + suffix.len());
-    let line = Line::from(vec![
-        Span::styled("/ ", faint(model)),
-        Span::styled(truncate_text(&search.query, query_room), fg(theme.text)),
-        Span::styled(suffix, faint(model)),
-    ]);
-    let width = line.width();
-    put(
-        frame,
-        area.right().saturating_sub(1 + width as u16),
-        area.y,
-        width as u16,
-        line,
-    );
-    width + 1
+    let hint = "Backspace removes the last term";
+    if used + text::width(hint) < field.width as usize {
+        spans.push(Span::styled(hint, faint(model)));
+    }
+    put(frame, field.x, area.y, field.width, Line::from(spans));
 }
 
 pub(crate) fn render_status(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {

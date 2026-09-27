@@ -39,6 +39,9 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
 
     let page = geometry::page(model, area);
     bars::render_top(frame, page.top, model);
+    if let Some(filter) = page.filter {
+        bars::render_filter(frame, filter, model);
+    }
     if let Some(rail) = page.rail {
         rail::render(frame, rail, model);
     }
