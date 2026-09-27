@@ -7,15 +7,15 @@ mod task_editor;
 
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{App, Mode, SaveState, ToastKind};
+use crate::clock::Clock;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::Color;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
-use std::time::Instant;
 
-pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
+pub fn render(frame: &mut Frame<'_>, app: &App, clock: Clock) {
     let area = frame.area();
     frame.render_widget(
         Block::default().style(Style::default().bg(app.theme.background)),
@@ -28,24 +28,23 @@ pub(crate) fn render(frame: &mut Frame<'_>, app: &App) {
         Constraint::Length(1),
     ])
     .split(area);
-    let now = Instant::now();
     render_header(frame, sections[0], app);
     let content = sections[1];
     if content.width >= sidebar::WIDTH + 56 {
         let columns = Layout::horizontal([Constraint::Length(sidebar::WIDTH), Constraint::Min(1)])
             .split(content);
         sidebar::render(frame, columns[0], app);
-        dashboard::render(frame, columns[1], app, now);
+        dashboard::render(frame, columns[1], app, clock);
     } else {
-        dashboard::render(frame, content, app, now);
+        dashboard::render(frame, content, app, clock);
     }
-    render_footer(frame, sections[2], app, now);
+    render_footer(frame, sections[2], app, clock);
 
     match &app.mode {
-        Mode::Editor(editor) => task_editor::render(frame, area, app, editor, now),
-        Mode::Detail(id) => detail::render(frame, area, app, *id, now),
-        Mode::Help => help::render(frame, area, app, now),
-        Mode::ConfirmDelete(id) => help::render_confirm(frame, area, app, *id, now),
+        Mode::Editor(editor) => task_editor::render(frame, area, app, editor, clock),
+        Mode::Detail(id) => detail::render(frame, area, app, *id, clock),
+        Mode::Help => help::render(frame, area, app, clock),
+        Mode::ConfirmDelete(id) => help::render_confirm(frame, area, app, *id, clock),
         Mode::Dashboard => {}
     }
 }
@@ -98,7 +97,7 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 }
 
-fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
+fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
     let hints = match &app.mode {
         Mode::Dashboard if app.search_active => "type to search  •  enter search  •  esc clear",
         Mode::Dashboard if app.focus == crate::app::FocusRegion::Rail => {
@@ -125,7 +124,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
         };
         let progress = app
             .animations
-            .progress(AnimationKind::Toast, now)
+            .progress(AnimationKind::Toast, clock.instant)
             .map(ease_out_cubic)
             .unwrap_or(1.0);
         let color = blend_color(app.theme.muted, color, progress);
@@ -231,13 +230,24 @@ mod tests {
     }
 
     #[test]
+    fn relative_time_uses_the_passed_in_clock() {
+        assert_eq!(cards::relative_time(0, 30_000), "just now");
+        assert_eq!(cards::relative_time(0, 5 * 60_000), "5m");
+        assert_eq!(cards::relative_time(0, 3 * 86_400_000), "3d");
+    }
+
+    #[test]
     fn dashboard_renders_with_test_backend() {
         let directory = tempfile::tempdir().unwrap();
         let store = JsonStore::new(directory.path().join("board.json"));
-        let mut app = App::new(store, false).unwrap();
-        app.board.add_task(0, "Write docs", "Start here").unwrap();
+        let mut app = App::new(store, false, Clock::fixed(0)).unwrap();
+        app.board
+            .add_task(0, "Write docs", "Start here", 0)
+            .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
-        terminal.draw(|frame| render(frame, &app)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &app, Clock::fixed(0)))
+            .unwrap();
         let rendered: String = terminal
             .backend()
             .buffer()
@@ -254,16 +264,18 @@ mod tests {
     fn all_tasks_renders_cards_and_rail() {
         let directory = tempfile::tempdir().unwrap();
         let store = JsonStore::new(directory.path().join("board.json"));
-        let mut app = App::new(store, false).unwrap();
+        let mut app = App::new(store, false, Clock::fixed(0)).unwrap();
         app.board
-            .add_task(0, "Shape cards", "Make scanning easier")
+            .add_task(0, "Shape cards", "Make scanning easier", 0)
             .unwrap();
         app.board
-            .add_task(1, "Tune navigation", "Rail and focus")
+            .add_task(1, "Tune navigation", "Rail and focus", 0)
             .unwrap();
         app.view_mode = ViewMode::AllTasks;
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        terminal.draw(|frame| render(frame, &app)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &app, Clock::fixed(0)))
+            .unwrap();
         let rendered: String = terminal
             .backend()
             .buffer()
@@ -281,14 +293,16 @@ mod tests {
     fn detail_drawer_renders_metadata() {
         let directory = tempfile::tempdir().unwrap();
         let store = JsonStore::new(directory.path().join("board.json"));
-        let mut app = App::new(store, false).unwrap();
+        let mut app = App::new(store, false, Clock::fixed(0)).unwrap();
         let id = app
             .board
-            .add_task(0, "Inspect me", "A useful description")
+            .add_task(0, "Inspect me", "A useful description", 0)
             .unwrap();
         app.mode = Mode::Detail(id);
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
-        terminal.draw(|frame| render(frame, &app)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &app, Clock::fixed(0)))
+            .unwrap();
         let rendered: String = terminal
             .backend()
             .buffer()

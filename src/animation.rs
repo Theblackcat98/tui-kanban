@@ -22,10 +22,10 @@ pub struct Animation {
 }
 
 impl Animation {
-    pub fn new(kind: AnimationKind, duration: Duration) -> Self {
+    pub fn new(kind: AnimationKind, duration: Duration, now: Instant) -> Self {
         Self {
             kind,
-            started_at: Instant::now(),
+            started_at: now,
             duration,
         }
     }
@@ -61,9 +61,9 @@ impl AnimationEngine {
         }
     }
 
-    pub fn start(&mut self, kind: AnimationKind, duration: Duration) {
+    pub fn start(&mut self, kind: AnimationKind, duration: Duration, now: Instant) {
         if self.settings.enabled {
-            self.animations.push(Animation::new(kind, duration));
+            self.animations.push(Animation::new(kind, duration, now));
         }
     }
 
@@ -128,7 +128,11 @@ mod tests {
     #[test]
     fn disabled_engine_does_not_schedule_work() {
         let mut engine = AnimationEngine::new(AnimationSettings { enabled: false });
-        engine.start(AnimationKind::Modal, Duration::from_millis(200));
+        engine.start(
+            AnimationKind::Modal,
+            Duration::from_millis(200),
+            Instant::now(),
+        );
         assert!(!engine.is_active(Instant::now()));
         assert_eq!(engine.progress(AnimationKind::Modal, Instant::now()), None);
     }
@@ -137,7 +141,7 @@ mod tests {
     fn enabled_engine_reports_progress() {
         let mut engine = AnimationEngine::new(AnimationSettings { enabled: true });
         let now = Instant::now();
-        engine.start(AnimationKind::Drawer, Duration::from_millis(100));
+        engine.start(AnimationKind::Drawer, Duration::from_millis(100), now);
         assert!(engine.is_active(now));
         let progress = engine.progress(AnimationKind::Drawer, now).unwrap();
         assert!((0.0..=1.0).contains(&progress));

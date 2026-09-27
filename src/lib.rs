@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod app;
+pub mod clock;
 pub mod domain;
 pub mod storage;
 pub mod theme;

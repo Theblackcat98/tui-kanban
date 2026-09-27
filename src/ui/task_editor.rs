@@ -1,19 +1,19 @@
 use super::{centered_rect, field_label, render_clear, surface_style, truncate_text};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{App, EditorField, EditorState};
+use crate::clock::Clock;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
-use std::time::Instant;
 
 pub(crate) fn render(
     frame: &mut Frame<'_>,
     area: Rect,
     app: &App,
     editor: &EditorState,
-    now: Instant,
+    clock: Clock,
 ) {
     let full_width = (area.width.saturating_mul(4) / 5)
         .clamp(28, 72)
@@ -21,7 +21,7 @@ pub(crate) fn render(
     let full_height = 15.min(area.height.saturating_sub(2));
     let progress = app
         .animations
-        .progress(AnimationKind::Modal, now)
+        .progress(AnimationKind::Modal, clock.instant)
         .map(ease_out_cubic)
         .unwrap_or(1.0);
     let width = ((full_width as f32 * progress).round() as u16).min(area.width);

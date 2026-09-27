@@ -105,7 +105,7 @@ mod tests {
         let path = directory.path().join("board.json");
         let store = JsonStore::new(&path);
         let mut board = Board::default();
-        board.add_task(0, "Persist me", "Round trip").unwrap();
+        board.add_task(0, "Persist me", "Round trip", 0).unwrap();
         store.save(&board).unwrap();
         let loaded = store.load().unwrap().unwrap();
         assert_eq!(loaded, board);

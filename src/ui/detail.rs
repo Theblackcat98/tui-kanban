@@ -2,19 +2,19 @@ use super::cards;
 use super::{render_clear, short_id, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::App;
+use crate::clock::Clock;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
-use std::time::Instant;
 
 pub(crate) fn render(
     frame: &mut Frame<'_>,
     area: Rect,
     app: &App,
     task_id: uuid::Uuid,
-    now: Instant,
+    clock: Clock,
 ) {
     let full_width = if area.width < 56 {
         area.width
@@ -23,7 +23,7 @@ pub(crate) fn render(
     };
     let progress = app
         .animations
-        .progress(AnimationKind::Drawer, now)
+        .progress(AnimationKind::Drawer, clock.instant)
         .map(ease_out_cubic)
         .unwrap_or(1.0);
     let width = ((full_width as f32 * progress).round() as u16).min(area.width);
@@ -123,13 +123,16 @@ pub(crate) fn render(
 
     let metadata = vec![
         Line::from(Span::styled(
-            format!(" created {}", cards::relative_time(task.created_at)),
+            format!(
+                " created {}",
+                cards::relative_time(task.created_at, clock.wall_millis)
+            ),
             Style::default().fg(app.theme.muted),
         )),
         Line::from(Span::styled(
             format!(
                 " updated {}  •  id {}",
-                cards::relative_time(task.updated_at),
+                cards::relative_time(task.updated_at, clock.wall_millis),
                 short_id(task.id)
             ),
             Style::default().fg(app.theme.muted),

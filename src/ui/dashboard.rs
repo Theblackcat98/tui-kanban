@@ -1,17 +1,17 @@
 use super::{cards, text_style, truncate_text};
 use crate::app::{App, ViewMode};
+use crate::clock::Clock;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
-use std::time::Instant;
 
 const ALL_TASK_MIN_CARD_WIDTH: u16 = 30;
 const ALL_TASK_MAX_CARD_COLUMNS: u16 = 3;
 const CARD_GAP: u16 = 1;
 
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
+pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
     if app.board.columns.is_empty() {
         frame.render_widget(
             Paragraph::new("This board has no columns.")
@@ -23,14 +23,14 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant)
     }
 
     match app.view_mode {
-        ViewMode::Board => render_board(frame, area, app, now),
-        ViewMode::AllTasks => render_all_tasks(frame, area, app, now),
+        ViewMode::Board => render_board(frame, area, app, clock),
+        ViewMode::AllTasks => render_all_tasks(frame, area, app, clock),
     }
 }
 
-fn render_board(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
+fn render_board(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
     if area.width < 90 {
-        render_column(frame, area, app, app.selected_column, now);
+        render_column(frame, area, app, app.selected_column, clock);
         return;
     }
 
@@ -44,12 +44,12 @@ fn render_board(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
     for index in 0..app.board.columns.len() {
         let width = base_width + u16::from((index as u16) < remainder);
         let column_area = Rect::new(x, area.y, width, area.height);
-        render_column(frame, column_area, app, index, now);
+        render_column(frame, column_area, app, index, clock);
         x = x.saturating_add(width).saturating_add(CARD_GAP);
     }
 }
 
-fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usize, now: Instant) {
+fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usize, clock: Clock) {
     let Some(column) = app.board.columns.get(column_index) else {
         return;
     };
@@ -159,7 +159,7 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
             column_index,
             task,
             focused && selected_id == Some(task.id),
-            now,
+            clock,
         );
     }
 }
@@ -170,7 +170,7 @@ struct AllTaskSection {
     start: usize,
 }
 
-fn render_all_tasks(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
+fn render_all_tasks(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -212,7 +212,7 @@ fn render_all_tasks(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) 
     }
 
     for section in sections {
-        render_all_section(frame, area, app, &section, per_row, scroll, now);
+        render_all_section(frame, area, app, &section, per_row, scroll, clock);
     }
 }
 
@@ -223,7 +223,7 @@ fn render_all_section(
     section: &AllTaskSection,
     per_row: u16,
     scroll: usize,
-    now: Instant,
+    clock: Clock,
 ) {
     let Some(column) = app.board.columns.get(section.column) else {
         return;
@@ -305,7 +305,7 @@ fn render_all_section(
                 section.column,
                 task,
                 selected_id == Some(task.id),
-                now,
+                clock,
             );
             x = x.saturating_add(width).saturating_add(CARD_GAP);
         }

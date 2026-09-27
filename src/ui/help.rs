@@ -1,19 +1,19 @@
 use super::{centered_rect, render_clear, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::App;
+use crate::clock::Clock;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
-use std::time::Instant;
 
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
+pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
     let full_width = 58.min(area.width.saturating_sub(2));
     let full_height = 23.min(area.height.saturating_sub(2));
     let progress = app
         .animations
-        .progress(AnimationKind::Modal, now)
+        .progress(AnimationKind::Modal, clock.instant)
         .map(ease_out_cubic)
         .unwrap_or(1.0);
     let width = ((full_width as f32 * progress).round() as u16).min(area.width);
@@ -98,13 +98,13 @@ pub(crate) fn render_confirm(
     area: Rect,
     app: &App,
     task_id: uuid::Uuid,
-    now: Instant,
+    clock: Clock,
 ) {
     let full_width = 48.min(area.width.saturating_sub(2));
     let full_height = 9.min(area.height.saturating_sub(2));
     let progress = app
         .animations
-        .progress(AnimationKind::Modal, now)
+        .progress(AnimationKind::Modal, clock.instant)
         .map(ease_out_cubic)
         .unwrap_or(1.0);
     let width = ((full_width as f32 * progress).round() as u16).min(area.width);

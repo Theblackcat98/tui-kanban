@@ -159,6 +159,7 @@ impl Board {
         column_index: usize,
         title: impl Into<String>,
         description: impl Into<String>,
+        now: i64,
     ) -> Result<Uuid, BoardError> {
         let title = title.into();
         if title.trim().is_empty() {
@@ -168,7 +169,7 @@ impl Board {
             .columns
             .get_mut(column_index)
             .ok_or(BoardError::InvalidColumn(column_index))?;
-        let task = Task::new(title.trim().to_owned(), description.into());
+        let task = Task::new(title.trim().to_owned(), description.into(), now);
         let id = task.id;
         column.tasks.push(task);
         Ok(id)
@@ -179,6 +180,7 @@ impl Board {
         id: Uuid,
         title: impl Into<String>,
         description: impl Into<String>,
+        now: i64,
     ) -> Result<(), BoardError> {
         let title = title.into();
         if title.trim().is_empty() {
@@ -186,8 +188,11 @@ impl Board {
         }
         let (column_index, task_index) =
             self.task_location(id).ok_or(BoardError::TaskNotFound(id))?;
-        self.columns[column_index].tasks[task_index]
-            .update(title.trim().to_owned(), description.into());
+        self.columns[column_index].tasks[task_index].update(
+            title.trim().to_owned(),
+            description.into(),
+            now,
+        );
         Ok(())
     }
 
@@ -202,6 +207,7 @@ impl Board {
         id: Uuid,
         to_column: usize,
         to_index: Option<usize>,
+        now: i64,
     ) -> Result<MoveOutcome, BoardError> {
         let (from_column, from_index) =
             self.task_location(id).ok_or(BoardError::TaskNotFound(id))?;
@@ -222,7 +228,7 @@ impl Board {
         self.columns[to_column]
             .tasks
             .insert(insertion_index, task.clone());
-        self.columns[to_column].tasks[insertion_index].touch();
+        self.columns[to_column].tasks[insertion_index].touch(now);
 
         Ok(MoveOutcome {
             task_id: id,
@@ -263,17 +269,17 @@ mod tests {
     fn task_lifecycle_updates_board() {
         let mut board = Board::default();
         let id = board
-            .add_task(0, "Write parser", "Keep the format readable")
+            .add_task(0, "Write parser", "Keep the format readable", 0)
             .unwrap();
         assert_eq!(board.task_count(), 1);
         assert_eq!(board.task(id).unwrap().title, "Write parser");
 
         board
-            .update_task(id, "Write UI", "Ship the first screen")
+            .update_task(id, "Write UI", "Ship the first screen", 0)
             .unwrap();
         assert_eq!(board.task(id).unwrap().title, "Write UI");
 
-        let outcome = board.move_task(id, 1, None).unwrap();
+        let outcome = board.move_task(id, 1, None, 0).unwrap();
         assert_eq!(outcome.from_column, 0);
         assert_eq!(outcome.to_column, 1);
         assert_eq!(board.task(id).unwrap().title, "Write UI");
@@ -285,19 +291,19 @@ mod tests {
     #[test]
     fn same_column_move_uses_final_index() {
         let mut board = Board::default();
-        let first = board.add_task(0, "First", "").unwrap();
-        board.add_task(0, "Second", "").unwrap();
-        board.add_task(0, "Third", "").unwrap();
-        board.move_task(first, 0, Some(2)).unwrap();
+        let first = board.add_task(0, "First", "", 0).unwrap();
+        board.add_task(0, "Second", "", 0).unwrap();
+        board.add_task(0, "Third", "", 0).unwrap();
+        board.move_task(first, 0, Some(2), 0).unwrap();
         assert_eq!(board.columns[0].tasks[1].id, first);
     }
 
     #[test]
     fn invalid_tasks_are_rejected() {
         let mut board = Board::default();
-        assert_eq!(board.add_task(0, "  ", ""), Err(BoardError::EmptyTitle));
+        assert_eq!(board.add_task(0, "  ", "", 0), Err(BoardError::EmptyTitle));
         assert_eq!(
-            board.add_task(9, "Task", ""),
+            board.add_task(9, "Task", "", 0),
             Err(BoardError::InvalidColumn(9))
         );
     }
@@ -305,8 +311,12 @@ mod tests {
     #[test]
     fn search_matches_title_and_description() {
         let mut board = Board::default();
-        board.add_task(0, "Design cards", "Use Catppuccin").unwrap();
-        board.add_task(0, "Write tests", "Cover storage").unwrap();
+        board
+            .add_task(0, "Design cards", "Use Catppuccin", 0)
+            .unwrap();
+        board
+            .add_task(0, "Write tests", "Cover storage", 0)
+            .unwrap();
         assert_eq!(board.search("catppuccin"), 1);
         assert_eq!(board.search("storage"), 1);
         assert_eq!(board.search(""), 2);

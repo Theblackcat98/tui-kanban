@@ -1,14 +1,13 @@
 use super::{blend_color, truncate_text};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{App, FocusRegion};
+use crate::clock::Clock;
 use crate::domain::Task;
-use crate::domain::task::now_millis;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
-use std::time::Instant;
 
 pub(crate) const CARD_HEIGHT: u16 = 6;
 
@@ -19,7 +18,7 @@ pub(crate) fn render_card(
     column_index: usize,
     task: &Task,
     selected: bool,
-    now: Instant,
+    clock: Clock,
 ) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -27,7 +26,7 @@ pub(crate) fn render_card(
     let focused = app.focus == FocusRegion::Cards;
     let selection_progress = app
         .animations
-        .progress(AnimationKind::Selection, now)
+        .progress(AnimationKind::Selection, clock.instant)
         .map(ease_out_cubic)
         .unwrap_or(1.0);
     let accent = column_accent(app, column_index);
@@ -94,7 +93,7 @@ pub(crate) fn render_card(
     let metadata = format!(
         " {}  •  updated {}",
         task_column_name(app, column_index),
-        relative_time(task.updated_at)
+        relative_time(task.updated_at, clock.wall_millis)
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -114,8 +113,8 @@ pub(crate) fn column_accent(app: &App, index: usize) -> ratatui::style::Color {
     }
 }
 
-pub(crate) fn relative_time(timestamp: i64) -> String {
-    let elapsed = now_millis().saturating_sub(timestamp).max(0);
+pub(crate) fn relative_time(timestamp: i64, now: i64) -> String {
+    let elapsed = now.saturating_sub(timestamp).max(0);
     match elapsed {
         0..=59_999 => "just now".to_owned(),
         60_000..=3_599_999 => format!("{}m", elapsed / 60_000),

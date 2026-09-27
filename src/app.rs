@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::animation::{AnimationEngine, AnimationKind, AnimationSettings};
+use crate::clock::Clock;
 use crate::domain::{Board, BoardError, Task};
 use crate::storage::JsonStore;
 use crate::theme::{Theme, shared_theme};
@@ -222,10 +223,12 @@ pub struct App {
     pub should_quit: bool,
     pub animations: AnimationEngine,
     pub theme: Theme,
+    /// The time of the event being handled, set by `handle_key` and `tick`.
+    clock: Clock,
 }
 
 impl App {
-    pub fn new(store: JsonStore, animations_enabled: bool) -> Result<Self> {
+    pub fn new(store: JsonStore, animations_enabled: bool, clock: Clock) -> Result<Self> {
         let board = store
             .load_or_default()
             .with_context(|| format!("could not load {}", store.path().display()))?;
@@ -251,15 +254,17 @@ impl App {
                 enabled: animations_enabled,
             }),
             theme,
+            clock,
         };
         app.normalize_selection();
         Ok(app)
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent, now: Instant) {
+    pub fn handle_key(&mut self, key: KeyEvent, clock: Clock) {
         if !accepts_key(&key) {
             return;
         }
+        self.clock = clock;
         if key.modifiers.contains(KeyModifiers::CONTROL)
             && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
         {
@@ -268,20 +273,22 @@ impl App {
         }
 
         match self.mode.clone() {
-            Mode::Dashboard => self.handle_dashboard_key(key, now),
+            Mode::Dashboard => self.handle_dashboard_key(key),
             Mode::Editor(mut editor) => {
                 self.handle_editor_key(key, &mut editor);
                 if matches!(self.mode, Mode::Editor(_)) {
                     self.mode = Mode::Editor(editor);
                 }
             }
-            Mode::Detail(_) => self.handle_detail_key(key, now),
+            Mode::Detail(_) => self.handle_detail_key(key),
             Mode::Help => self.handle_help_key(key),
-            Mode::ConfirmDelete(_) => self.handle_confirm_key(key, now),
+            Mode::ConfirmDelete(_) => self.handle_confirm_key(key),
         }
     }
 
-    pub fn tick(&mut self, now: Instant) {
+    pub fn tick(&mut self, clock: Clock) {
+        self.clock = clock;
+        let now = clock.instant;
         self.animations.tick(now);
         if self
             .toast
@@ -403,7 +410,7 @@ impl App {
         }
     }
 
-    fn handle_dashboard_key(&mut self, key: KeyEvent, now: Instant) {
+    fn handle_dashboard_key(&mut self, key: KeyEvent) {
         if self.search_active {
             self.handle_search_key(key);
             return;
@@ -417,22 +424,31 @@ impl App {
             KeyCode::Char('q') | KeyCode::Char('Q') => self.should_quit = true,
             KeyCode::Char('n') | KeyCode::Char('N') => {
                 self.mode = Mode::Editor(EditorState::new());
-                self.animations
-                    .start(AnimationKind::Modal, Duration::from_millis(180));
+                self.animations.start(
+                    AnimationKind::Modal,
+                    Duration::from_millis(180),
+                    self.clock.instant,
+                );
             }
             KeyCode::Char('e') | KeyCode::Char('E') => self.open_editor(),
             KeyCode::Char('d') | KeyCode::Char('D') => self.open_delete_confirmation(),
             KeyCode::Char('?') => {
                 self.mode = Mode::Help;
-                self.animations
-                    .start(AnimationKind::Modal, Duration::from_millis(180));
+                self.animations.start(
+                    AnimationKind::Modal,
+                    Duration::from_millis(180),
+                    self.clock.instant,
+                );
             }
             KeyCode::Char('/') => {
                 self.search_active = true;
                 self.search_input = TextInput::new(self.search_query.clone());
                 self.focus = FocusRegion::Cards;
-                self.animations
-                    .start(AnimationKind::Selection, Duration::from_millis(120));
+                self.animations.start(
+                    AnimationKind::Selection,
+                    Duration::from_millis(120),
+                    self.clock.instant,
+                );
             }
             KeyCode::Tab | KeyCode::BackTab => {
                 self.focus = match self.focus {
@@ -447,11 +463,14 @@ impl App {
                 };
                 self.all_tasks_scroll = 0;
                 self.focus = FocusRegion::Cards;
-                self.animations
-                    .start(AnimationKind::Selection, Duration::from_millis(140));
+                self.animations.start(
+                    AnimationKind::Selection,
+                    Duration::from_millis(140),
+                    self.clock.instant,
+                );
             }
-            KeyCode::Char('H') => self.move_selected_task(-1, now),
-            KeyCode::Char('L') => self.move_selected_task(1, now),
+            KeyCode::Char('H') => self.move_selected_task(-1),
+            KeyCode::Char('L') => self.move_selected_task(1),
             _ => self.handle_dashboard_navigation_key(key),
         }
     }
@@ -519,8 +538,11 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.mode = Mode::Dashboard;
-                self.animations
-                    .start(AnimationKind::Modal, Duration::from_millis(140));
+                self.animations.start(
+                    AnimationKind::Modal,
+                    Duration::from_millis(140),
+                    self.clock.instant,
+                );
             }
             KeyCode::Tab | KeyCode::BackTab => {
                 editor.field = match editor.field {
@@ -567,7 +589,7 @@ impl App {
         }
     }
 
-    fn handle_detail_key(&mut self, key: KeyEvent, now: Instant) {
+    fn handle_detail_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
                 self.mode = Mode::Dashboard;
@@ -575,8 +597,8 @@ impl App {
             }
             KeyCode::Char('e') | KeyCode::Char('E') => self.open_editor(),
             KeyCode::Char('d') | KeyCode::Char('D') => self.open_delete_confirmation(),
-            KeyCode::Char('H') => self.move_selected_task(-1, now),
-            KeyCode::Char('L') => self.move_selected_task(1, now),
+            KeyCode::Char('H') => self.move_selected_task(-1),
+            KeyCode::Char('L') => self.move_selected_task(1),
             KeyCode::PageUp => self.detail_scroll = self.detail_scroll.saturating_sub(3),
             KeyCode::PageDown => self.detail_scroll = self.detail_scroll.saturating_add(3),
             _ => {}
@@ -587,7 +609,7 @@ impl App {
         self.mode = Mode::Dashboard;
     }
 
-    fn handle_confirm_key(&mut self, key: KeyEvent, _now: Instant) {
+    fn handle_confirm_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
                 if let Mode::ConfirmDelete(id) = self.mode.clone() {
@@ -604,8 +626,11 @@ impl App {
             && let Some(task) = self.board.task(id)
         {
             self.mode = Mode::Editor(EditorState::from_task(task));
-            self.animations
-                .start(AnimationKind::Drawer, Duration::from_millis(180));
+            self.animations.start(
+                AnimationKind::Drawer,
+                Duration::from_millis(180),
+                self.clock.instant,
+            );
         }
     }
 
@@ -613,16 +638,22 @@ impl App {
         if let Some(id) = self.selected_task_id() {
             self.mode = Mode::Detail(id);
             self.detail_scroll = 0;
-            self.animations
-                .start(AnimationKind::Drawer, Duration::from_millis(220));
+            self.animations.start(
+                AnimationKind::Drawer,
+                Duration::from_millis(220),
+                self.clock.instant,
+            );
         }
     }
 
     fn open_delete_confirmation(&mut self) {
         if let Some(id) = self.selected_task_id() {
             self.mode = Mode::ConfirmDelete(id);
-            self.animations
-                .start(AnimationKind::Modal, Duration::from_millis(160));
+            self.animations.start(
+                AnimationKind::Modal,
+                Duration::from_millis(160),
+                self.clock.instant,
+            );
         }
     }
 
@@ -633,11 +664,12 @@ impl App {
             return;
         }
         let description = editor.description.value.clone();
+        let now = self.clock.wall_millis;
         let result = if let Some(id) = editor.task_id {
-            self.mutate(|board| board.update_task(id, title, description).map(|_| id))
+            self.mutate(|board| board.update_task(id, title, description, now).map(|_| id))
         } else {
             let column = self.selected_column;
-            self.mutate(move |board| board.add_task(column, title, description))
+            self.mutate(move |board| board.add_task(column, title, description, now))
         };
 
         match result {
@@ -646,8 +678,11 @@ impl App {
                 self.set_selected_task_id(id);
                 self.normalize_selection();
                 self.show_toast("Task saved", ToastKind::Success, Duration::from_secs(3));
-                self.animations
-                    .start(AnimationKind::CardMove, Duration::from_millis(220));
+                self.animations.start(
+                    AnimationKind::CardMove,
+                    Duration::from_millis(220),
+                    self.clock.instant,
+                );
             }
             Err(message) => editor.error = Some(message),
         }
@@ -661,11 +696,14 @@ impl App {
         self.mode = Mode::Dashboard;
         self.normalize_selection();
         self.show_toast("Task deleted", ToastKind::Info, Duration::from_secs(3));
-        self.animations
-            .start(AnimationKind::CardMove, Duration::from_millis(220));
+        self.animations.start(
+            AnimationKind::CardMove,
+            Duration::from_millis(220),
+            self.clock.instant,
+        );
     }
 
-    fn move_selected_task(&mut self, direction: i32, _now: Instant) {
+    fn move_selected_task(&mut self, direction: i32) {
         let Some(id) = self.selected_task_id() else {
             return;
         };
@@ -675,14 +713,18 @@ impl App {
         if target >= self.board.columns.len() {
             return;
         }
-        match self.mutate(|board| board.move_task(id, target, None)) {
+        let now = self.clock.wall_millis;
+        match self.mutate(|board| board.move_task(id, target, None, now)) {
             Ok(outcome) => {
                 self.selected_column = outcome.to_column;
                 self.selected_task = outcome.to_index;
                 self.selected_task_uuid = Some(id);
                 self.normalize_selection();
-                self.animations
-                    .start(AnimationKind::CardMove, Duration::from_millis(240));
+                self.animations.start(
+                    AnimationKind::CardMove,
+                    Duration::from_millis(240),
+                    self.clock.instant,
+                );
             }
             Err(message) => self.show_toast(message, ToastKind::Error, Duration::from_secs(4)),
         }
@@ -735,8 +777,11 @@ impl App {
         self.selected_task = 0;
         self.selected_task_uuid = None;
         self.normalize_selection();
-        self.animations
-            .start(AnimationKind::Selection, Duration::from_millis(140));
+        self.animations.start(
+            AnimationKind::Selection,
+            Duration::from_millis(140),
+            self.clock.instant,
+        );
     }
 
     fn move_task_vertical(&mut self, direction: i32) {
@@ -768,8 +813,11 @@ impl App {
             let next = current.clamp(0, visible.len() - 1);
             self.set_selected_task_index(self.selected_column, visible[next]);
         }
-        self.animations
-            .start(AnimationKind::Selection, Duration::from_millis(100));
+        self.animations.start(
+            AnimationKind::Selection,
+            Duration::from_millis(100),
+            self.clock.instant,
+        );
     }
 
     fn select_first_visible_task(&mut self) {
@@ -829,17 +877,20 @@ impl App {
         self.toast = Some(Toast {
             message: message.into(),
             kind,
-            expires_at: Instant::now() + duration,
+            expires_at: self.clock.instant + duration,
         });
-        self.animations
-            .start(AnimationKind::Toast, Duration::from_millis(220));
+        self.animations.start(
+            AnimationKind::Toast,
+            Duration::from_millis(220),
+            self.clock.instant,
+        );
     }
 }
 
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let store = JsonStore::new(cli.board);
-    let mut app = App::new(store, !cli.no_animation)?;
+    let mut app = App::new(store, !cli.no_animation, Clock::now())?;
     let mut terminal = ratatui::try_init().context("could not initialize terminal")?;
     let result = run_loop(&mut terminal, &mut app);
     let restore_result = ratatui::try_restore().context("could not restore terminal");
@@ -848,21 +899,21 @@ pub fn run() -> Result<()> {
 
 fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     loop {
-        terminal.draw(|frame| ui::render(frame, app))?;
+        let clock = Clock::now();
+        terminal.draw(|frame| ui::render(frame, app, clock))?;
         if app.should_quit {
             return app.flush().map_err(anyhow::Error::msg);
         }
 
-        let now = Instant::now();
-        let timeout = app.next_timeout(now);
+        let timeout = app.next_timeout(clock.instant);
         if event::poll(timeout)? {
             match event::read()? {
-                Event::Key(key) => app.handle_key(key, Instant::now()),
+                Event::Key(key) => app.handle_key(key, Clock::now()),
                 Event::Resize(_, _) => {}
                 _ => {}
             }
         } else {
-            app.tick(Instant::now());
+            app.tick(Clock::now());
         }
     }
 }
@@ -876,7 +927,7 @@ mod tests {
     fn test_app() -> (TempDir, App) {
         let directory = tempfile::tempdir().unwrap();
         let store = JsonStore::new(directory.path().join("board.json"));
-        let app = App::new(store, false).unwrap();
+        let app = App::new(store, false, Clock::fixed(0)).unwrap();
         (directory, app)
     }
 
@@ -898,7 +949,7 @@ mod tests {
     #[test]
     fn editor_creates_and_persists_a_task() {
         let (_directory, mut app) = test_app();
-        let now = Instant::now();
+        let now = Clock::fixed(0);
         app.handle_key(key(KeyCode::Char('n')), now);
         for character in "Ship it".chars() {
             app.handle_key(key(KeyCode::Char(character)), now);
@@ -917,10 +968,10 @@ mod tests {
     fn search_escape_clears_the_query() {
         let (_directory, mut app) = test_app();
         app.board
-            .add_task(0, "Design cards", "Color and layout")
+            .add_task(0, "Design cards", "Color and layout", 0)
             .unwrap();
-        app.board.add_task(0, "Write tests", "Storage").unwrap();
-        let now = Instant::now();
+        app.board.add_task(0, "Write tests", "Storage", 0).unwrap();
+        let now = Clock::fixed(0);
         app.handle_key(key(KeyCode::Char('/')), now);
         for character in "design".chars() {
             app.handle_key(key(KeyCode::Char(character)), now);
@@ -934,9 +985,9 @@ mod tests {
     #[test]
     fn moving_a_task_changes_column_and_selection() {
         let (_directory, mut app) = test_app();
-        let id = app.board.add_task(0, "Move me", "").unwrap();
+        let id = app.board.add_task(0, "Move me", "", 0).unwrap();
         app.selected_task = 0;
-        let now = Instant::now();
+        let now = Clock::fixed(0);
         app.handle_key(key(KeyCode::Char('L')), now);
         assert_eq!(app.board.task_location(id), Some((1, 0)));
         assert_eq!(app.selected_column, 1);
@@ -946,8 +997,8 @@ mod tests {
     #[test]
     fn delete_requires_confirmation() {
         let (_directory, mut app) = test_app();
-        app.board.add_task(0, "Delete me", "").unwrap();
-        let now = Instant::now();
+        app.board.add_task(0, "Delete me", "", 0).unwrap();
+        let now = Clock::fixed(0);
         app.handle_key(key(KeyCode::Char('d')), now);
         assert!(matches!(app.mode, Mode::ConfirmDelete(_)));
         app.handle_key(key(KeyCode::Esc), now);
@@ -960,7 +1011,7 @@ mod tests {
     #[test]
     fn toggles_all_tasks_and_rail_focus() {
         let (_directory, mut app) = test_app();
-        let now = Instant::now();
+        let now = Clock::fixed(0);
         app.handle_key(key(KeyCode::Char('v')), now);
         assert_eq!(app.view_mode, ViewMode::AllTasks);
         assert_eq!(app.focus, FocusRegion::Cards);
@@ -973,11 +1024,11 @@ mod tests {
     #[test]
     fn all_tasks_navigation_keeps_task_identity() {
         let (_directory, mut app) = test_app();
-        let first = app.board.add_task(0, "First", "").unwrap();
-        let second = app.board.add_task(1, "Second", "").unwrap();
+        let first = app.board.add_task(0, "First", "", 0).unwrap();
+        let second = app.board.add_task(1, "Second", "", 0).unwrap();
         app.view_mode = ViewMode::AllTasks;
         app.set_selected_task_id(first);
-        let now = Instant::now();
+        let now = Clock::fixed(0);
         app.handle_key(key(KeyCode::Down), now);
         assert_eq!(app.selected_task_id(), Some(second));
         assert_eq!(app.selected_column, 1);
