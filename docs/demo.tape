@@ -99,9 +99,7 @@ Sleep 1.2s
 
 # Space shows every key you can press.
 Type " "
-Sleep 1.8s
-Screenshot docs/screenshots/which-key.png
-Sleep 500ms
+Sleep 2s
 Escape
 Sleep 500ms
 
