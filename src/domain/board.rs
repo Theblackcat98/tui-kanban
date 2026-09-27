@@ -1,3 +1,4 @@
+use crate::domain::Extra;
 use crate::domain::task::Task;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -11,6 +12,9 @@ pub struct Board {
     pub schema_version: u32,
     pub name: String,
     pub columns: Vec<Column>,
+    /// Fields this version doesn't know, kept so saving doesn't drop them.
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -22,6 +26,9 @@ pub struct Column {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     pub tasks: Vec<Task>,
+    /// Fields this version doesn't know, kept so saving doesn't drop them.
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -48,6 +55,11 @@ impl fmt::Display for BoardError {
             Self::EmptyTitle => formatter.write_str("task title cannot be empty"),
             Self::InvalidColumn(index) => write!(formatter, "column index {index} does not exist"),
             Self::TaskNotFound(id) => write!(formatter, "task {id} does not exist"),
+            Self::UnsupportedSchema(version) if *version > SCHEMA_VERSION => write!(
+                formatter,
+                "board schema version {version} is newer than this tui-kanban reads \
+                 ({SCHEMA_VERSION}); upgrade tui-kanban to open it"
+            ),
             Self::UnsupportedSchema(version) => {
                 write!(formatter, "unsupported board schema version {version}")
             }
@@ -68,6 +80,7 @@ impl Default for Board {
                 Column::new("in-progress", "In Progress").with_color("peach"),
                 Column::new("done", "Done").with_color("green"),
             ],
+            extra: Extra::new(),
         }
     }
 }
@@ -79,6 +92,7 @@ impl Column {
             name: name.into(),
             color: None,
             tasks: Vec::new(),
+            extra: Extra::new(),
         }
     }
 

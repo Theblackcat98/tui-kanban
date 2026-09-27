@@ -125,6 +125,7 @@ impl App {
                         let result = self
                             .store
                             .save(&self.model.board)
+                            .map(|_| ())
                             .map_err(|error| error.to_string());
                         queue.push_back(Action::SaveFinished(result));
                     }

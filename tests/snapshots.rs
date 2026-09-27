@@ -34,6 +34,7 @@ fn task(n: u128, title: &str, description: &str, age: i64) -> Task {
         description: description.to_owned(),
         created_at: NOW - age - DAY,
         updated_at: NOW - age,
+        extra: Default::default(),
     }
 }
 
@@ -48,6 +49,7 @@ fn board(columns: Vec<Column>) -> Board {
         schema_version: SCHEMA_VERSION,
         name: "Snapshot Board".to_owned(),
         columns,
+        extra: Default::default(),
     }
 }
 

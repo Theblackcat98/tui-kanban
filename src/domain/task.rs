@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::Extra;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Task {
     pub id: Uuid,
@@ -9,6 +11,9 @@ pub struct Task {
     pub description: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Fields this version doesn't know, kept so saving doesn't drop them.
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 impl Task {
@@ -19,6 +24,7 @@ impl Task {
             description: description.into(),
             created_at: now,
             updated_at: now,
+            extra: Extra::new(),
         }
     }
 
