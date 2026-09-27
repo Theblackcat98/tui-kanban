@@ -120,6 +120,14 @@ mod tests {
     }
 
     #[test]
+    fn demo_board_is_valid() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/demo-board.json");
+        let board = JsonStore::new(path).load().unwrap().unwrap();
+        assert_eq!(board.name, "Demo Board");
+        assert_eq!(board.task_count(), 7);
+    }
+
+    #[test]
     fn malformed_file_is_not_overwritten_on_load() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("board.json");
