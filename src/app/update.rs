@@ -901,11 +901,17 @@ impl Updater<'_> {
             Some(_) => format!("edit '{title}'"),
             None => format!("add '{title}'"),
         };
+        let expand = self.model.lane_hidden(placement.column);
         let result = match task_id {
             Some(id) => self.change(label, |board, now| {
                 board.update_task(id, title, description, now).map(|_| id)
             }),
             None => self.change(label, |board, now| {
+                // A task added to a collapsed lane expands it, so the new
+                // card can be seen.
+                if expand {
+                    board.set_collapsed(placement.column, false)?;
+                }
                 let anchor = placement.anchor.and_then(|id| board.task_location(id));
                 let index = match anchor {
                     Some((column, index)) if column == placement.column => {
@@ -983,7 +989,13 @@ impl Updater<'_> {
             return;
         }
         let label = format!("add '{title}'");
-        match self.change(label, |board, now| board.add_task(column, title, "", now)) {
+        let expand = self.model.lane_hidden(column);
+        match self.change(label, |board, now| {
+            if expand {
+                board.set_collapsed(column, false)?;
+            }
+            board.add_task(column, title, "", now)
+        }) {
             Ok(id) => {
                 if let Some(Screen::QuickAdd { input, .. }) = self.model.ui.screens.last_mut() {
                     *input = TextInput::new("");

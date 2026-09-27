@@ -142,8 +142,8 @@ Backlog  3
   its underline and its name written downwards. Its cards are hidden in
   the Board view, so they can't be selected or matched by a search; h/l
   still stop on it, and `z` expands it again. All tasks shows every
-  column. At the Compact breakpoint a collapsed lane says `Collapsed ·
-  z to expand`.
+  column. Adding a task to a collapsed lane expands it. At the Compact
+  breakpoint a collapsed lane says `Collapsed · z to expand`.
 - At the Compact breakpoint the header is a tab strip instead:
   `‹ Backlog 3 · In Progress 2 · Done 5 ›`, with the active column in
   its lane colour and arrows when columns are off-screen.

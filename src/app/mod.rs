@@ -2067,6 +2067,15 @@ mod tests {
         press(&mut app, &[KeyCode::Char('v')]);
         assert_eq!(app.model.visible_task_indices(2), vec![0]);
         press(&mut app, &[KeyCode::Char('v')]);
+        // Adding a task to it expands it, as one change.
+        press(&mut app, &[KeyCode::Char('a')]);
+        type_text(&mut app, "More");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Esc]);
+        assert!(!app.model.board.columns[2].collapsed);
+        assert_eq!(titles(&app, 2), ["Shipped", "More"]);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert!(app.model.board.columns[2].collapsed);
+        assert_eq!(titles(&app, 2), ["Shipped"]);
         // Going to one of its tasks from the palette expands it.
         press(&mut app, &[KeyCode::Char('1'), KeyCode::Char(':')]);
         type_text(&mut app, "shipped");
