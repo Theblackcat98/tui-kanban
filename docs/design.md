@@ -279,6 +279,33 @@ task below / above the selected one, `a` quick-adds to the end of the
 lane from a one-line prompt that stays open for the next task, `y`
 duplicates, and `u` / `U` undo and redo.
 
+## Mouse
+
+The keyboard comes first, but the mouse works where it is tried. What
+is under the pointer is worked out from the same geometry the screen is
+drawn with (`src/ui/hit.rs`), so a click always lands on what is shown.
+
+- **Click** a card to select it, a lane header or empty lane space to
+  focus that lane, a rail entry to focus the rail on it, a view name in
+  the top bar to switch views, and `‹ N more` / `N more ›` to scroll the
+  lanes. A hint in the status line runs its command. With the detail
+  drawer open, clicking another card shows it there.
+- **Double-click** a card to open it, a rail entry to focus its cards,
+  and a collapsed lane to expand it.
+- **The wheel** moves the selection in the active lane and in All tasks
+  (which scrolls to follow it), scrolls other lanes without taking the
+  selection, scrolls the drawer's description and help, and moves
+  through menus and the palette.
+- **Drag** a card to move it. While dragging, an `accent` line between
+  cards (or a bar beside a card in All tasks) shows where it will land;
+  dropping on a rail entry or a collapsed lane puts it at the end of
+  that column. A full column asks first, as with the keys.
+
+While an overlay other than the drawer is open, only the status line
+responds. Capturing the mouse stops the terminal selecting text (most
+terminals still do with Shift held); `--no-mouse` leaves the mouse to the
+terminal.
+
 ## Saving
 
 Changes are written in the background, 150 ms after the first one, so a

@@ -11,6 +11,7 @@ use uuid::Uuid;
 use super::editor::EditorState;
 use super::history::History;
 use super::input::TextInput;
+use super::mouse::Mouse;
 use super::palette::Palette;
 use crate::animation::{AnimationEngine, AnimationSettings};
 use crate::command::{CommandId, Context};
@@ -254,6 +255,7 @@ pub struct Ui {
     pub pending: Option<Pending>,
     /// Whether the first-run tip bar shows.
     pub tip: bool,
+    pub mouse: Mouse,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -294,6 +296,7 @@ impl Model {
                 }),
                 pending: None,
                 tip: false,
+                mouse: Mouse::default(),
             },
             session: Session::default(),
         };

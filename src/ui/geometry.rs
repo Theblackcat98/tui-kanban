@@ -387,6 +387,94 @@ pub(crate) fn lane_offset(model: &Model, column: usize, area: Rect) -> usize {
     )
 }
 
+/// The cards a lane shows and where, as its renderer draws them and the
+/// mouse finds them.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LaneCards {
+    /// Each card on screen: its index in the column's tasks, and its area,
+    /// cut at the bottom of the lane if it has to be.
+    pub cards: Vec<(usize, Rect)>,
+    pub hidden_above: usize,
+    pub hidden_below: usize,
+}
+
+pub(crate) fn lane_cards(model: &Model, column: usize, area: Rect) -> LaneCards {
+    let visible = model.visible_task_indices(column);
+    if visible.is_empty() {
+        return LaneCards::default();
+    }
+    let parts = lane_parts(area);
+    let heights = lane_heights(model, column, area.width);
+    let offset = lane_offset(model, column, area);
+    let end = visible_end(&heights, parts.cards.height, offset);
+    let mut y = parts.cards.y;
+    let mut cards = Vec::with_capacity(end - offset);
+    for index in offset..end {
+        let height = heights[index].min(parts.cards.bottom().saturating_sub(y));
+        cards.push((visible[index], Rect::new(area.x, y, area.width, height)));
+        y = y.saturating_add(heights[index] + CARD_GAP);
+    }
+    LaneCards {
+        cards,
+        hidden_above: offset,
+        hidden_below: visible.len() - end,
+    }
+}
+
+/// Something drawn in the All tasks list, and where.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Placed {
+    Header {
+        column: usize,
+        area: Rect,
+    },
+    /// A card: its column, and its index in the column's tasks.
+    Card {
+        column: usize,
+        task: usize,
+        area: Rect,
+    },
+}
+
+/// Everything the All tasks list shows, top to bottom, as its renderer
+/// draws it and the mouse finds it, and how many cards are hidden above
+/// and below.
+pub(crate) fn place_all_tasks(model: &Model, list: &AllTasks) -> (Vec<Placed>, usize, usize) {
+    if list.items.is_empty() {
+        return (Vec::new(), 0, 0);
+    }
+    let offset = all_tasks_offset(model, list);
+    let end = visible_end(&list.heights, list.list.height, offset);
+    let columns = list.card_columns();
+    let area = list.list;
+    let mut placed = Vec::new();
+    let mut y = area.y;
+    for index in offset..end {
+        let height = list.heights[index].min(area.bottom().saturating_sub(y));
+        match &list.items[index] {
+            Item::Header { column } => placed.push(Placed::Header {
+                column: *column,
+                area: Rect::new(area.x, y, area.width, height),
+            }),
+            Item::Row { column, tasks } => {
+                for (task, (x, width)) in tasks.iter().zip(&columns) {
+                    placed.push(Placed::Card {
+                        column: *column,
+                        task: *task,
+                        area: Rect::new(area.x + x, y, *width, height),
+                    });
+                }
+            }
+        }
+        y = y.saturating_add(list.heights[index] + CARD_GAP);
+    }
+    (
+        placed,
+        list.card_count(0..offset),
+        list.card_count(end..list.items.len()),
+    )
+}
+
 /// One entry in the All tasks list.
 #[derive(Clone, Debug)]
 pub(crate) enum Item {

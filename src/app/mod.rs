@@ -14,6 +14,7 @@ mod editor;
 mod history;
 mod input;
 mod model;
+mod mouse;
 mod palette;
 mod persist;
 mod update;
@@ -26,6 +27,7 @@ pub use model::{
     FocusRegion, Model, PromptKind, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind,
     Ui, ViewMode, VisibleTask,
 };
+pub use mouse::{DOUBLE_CLICK, Drag, DropTarget, Hit, Marker, Mouse};
 pub use palette::{
     Entry as PaletteEntry, Palette, Target as PaletteTarget, entries as palette_entries,
 };
@@ -36,7 +38,8 @@ use anyhow::{Context as _, Result, bail};
 use clap::Parser;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
-    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEvent,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyEvent, MouseEventKind,
 };
 use ratatui::crossterm::execute;
 use std::collections::VecDeque;
@@ -67,6 +70,9 @@ pub struct Cli {
     /// Turn off animations (a non-empty REDUCE_MOTION does the same).
     #[arg(long)]
     pub no_animation: bool,
+    /// Leave the mouse to the terminal, so text can be selected as usual.
+    #[arg(long)]
+    pub no_mouse: bool,
 }
 
 /// The runtime: the model plus where it is saved. It turns events into
@@ -273,21 +279,27 @@ pub fn run() -> Result<()> {
     if let Some(state) = crate::paths::state_dir() {
         app = app.with_tip_marker(state.join("tip-dismissed"));
     }
-    let mut terminal = init_terminal()?;
+    let mouse = !cli.no_mouse;
+    let mut terminal = init_terminal(mouse)?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);
     }
-    let result = run_loop(&mut terminal, &mut app);
+    let result = run_loop(&mut terminal, &mut app, mouse);
     let restore_result = restore_terminal();
     result.and(restore_result).and(app.finish())
 }
 
 /// Enters the alternate screen and raw mode, with bracketed paste so a
-/// multi-line paste arrives as one piece of text rather than as keys.
-fn init_terminal() -> Result<DefaultTerminal> {
+/// multi-line paste arrives as one piece of text rather than as keys, and
+/// with mouse capture unless `mouse` is off. Capturing the mouse stops the
+/// terminal selecting text, except with Shift held in most terminals.
+fn init_terminal(mouse: bool) -> Result<DefaultTerminal> {
     let terminal = ratatui::try_init().context("could not initialize terminal")?;
-    // Terminals without bracketed paste ignore the request.
+    // Terminals without bracketed paste or a mouse ignore the requests.
     let _ = execute!(io::stdout(), EnableBracketedPaste);
+    if mouse {
+        let _ = execute!(io::stdout(), EnableMouseCapture);
+    }
     Ok(terminal)
 }
 
@@ -296,20 +308,21 @@ fn init_terminal() -> Result<DefaultTerminal> {
 fn edit_externally(
     terminal: &mut DefaultTerminal,
     text: &str,
+    mouse: bool,
 ) -> Result<std::result::Result<String, String>> {
     restore_terminal()?;
     let result = crate::tui::external::edit(text);
-    *terminal = init_terminal()?;
+    *terminal = init_terminal(mouse)?;
     terminal.clear()?;
     Ok(result)
 }
 
 fn restore_terminal() -> Result<()> {
-    let _ = execute!(io::stdout(), DisableBracketedPaste);
+    let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::try_restore().context("could not restore terminal")
 }
 
-fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+fn run_loop(terminal: &mut DefaultTerminal, app: &mut App, mouse: bool) -> Result<()> {
     let mut needs_redraw = true;
     loop {
         // Tick on every iteration, not only when polling times out, so
@@ -330,17 +343,15 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             match event::read()? {
                 Event::Key(key) => {
                     app.handle_key(key, Clock::now());
-                    if let Some((text, target)) = app.take_external_edit() {
-                        let result = edit_externally(terminal, &text)?;
-                        app.dispatch(
-                            Action::ExternalEditFinished { target, result },
-                            Clock::now(),
-                        );
-                    }
                     needs_redraw = true;
                 }
                 Event::Paste(text) => {
                     app.dispatch(Action::Paste(text), Clock::now());
+                    needs_redraw = true;
+                }
+                // Plain pointer movement changes nothing on screen.
+                Event::Mouse(event) if event.kind != MouseEventKind::Moved => {
+                    app.dispatch(Action::Mouse(event), Clock::now());
                     needs_redraw = true;
                 }
                 Event::Resize(width, height) => {
@@ -348,6 +359,14 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
                     needs_redraw = true;
                 }
                 _ => {}
+            }
+            // A key, or a click on a hint, can ask for $EDITOR.
+            if let Some((text, target)) = app.take_external_edit() {
+                let result = edit_externally(terminal, &text, mouse)?;
+                app.dispatch(
+                    Action::ExternalEditFinished { target, result },
+                    Clock::now(),
+                );
             }
         } else {
             // An animation frame is due, a toast expired, a save finished,
@@ -362,7 +381,7 @@ mod tests {
     use super::*;
     use crate::animation::{AnimationKind, FRAME_INTERVAL};
     use crate::domain::Board;
-    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
     use tempfile::TempDir;
     use uuid::Uuid;
 
@@ -1798,6 +1817,219 @@ mod tests {
         press(&mut app, &[KeyCode::Enter]);
         assert!(!app.model.board.columns[2].collapsed);
         assert_eq!(app.model.selected_task_id(), Some(done));
+    }
+
+    /// Where `text` is on screen, rendering the app as it is now: its
+    /// first appearance from the top.
+    fn find(app: &App, text: &str) -> (u16, u16) {
+        find_from(app, text, false)
+    }
+
+    /// The last appearance of `text`, from the bottom, as in the status
+    /// line.
+    fn find_last(app: &App, text: &str) -> (u16, u16) {
+        find_from(app, text, true)
+    }
+
+    fn find_from(app: &App, text: &str, from_bottom: bool) -> (u16, u16) {
+        let (width, height) = app.model.ui.viewport;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| ui::render(frame, &app.model, clock()))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<u16> = if from_bottom {
+            (0..height).rev().collect()
+        } else {
+            (0..height).collect()
+        };
+        for y in rows {
+            let row: Vec<&str> = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
+            let line: String = row.concat();
+            if let Some(byte) = line.find(text) {
+                return (line[..byte].chars().count() as u16, y);
+            }
+        }
+        panic!("{text:?} is not on screen");
+    }
+
+    fn mouse(app: &mut App, kind: MouseEventKind, (x, y): (u16, u16), clock: Clock) {
+        use ratatui::crossterm::event::MouseEvent;
+        app.dispatch(
+            Action::Mouse(MouseEvent {
+                kind,
+                column: x,
+                row: y,
+                modifiers: KeyModifiers::NONE,
+            }),
+            clock,
+        );
+    }
+
+    fn click(app: &mut App, at: (u16, u16)) {
+        use ratatui::crossterm::event::MouseButton;
+        mouse(app, MouseEventKind::Down(MouseButton::Left), at, clock());
+        mouse(app, MouseEventKind::Up(MouseButton::Left), at, clock());
+    }
+
+    fn drag(app: &mut App, from: (u16, u16), to: (u16, u16)) {
+        use ratatui::crossterm::event::MouseButton;
+        mouse(app, MouseEventKind::Down(MouseButton::Left), from, clock());
+        mouse(app, MouseEventKind::Drag(MouseButton::Left), to, clock());
+        mouse(app, MouseEventKind::Up(MouseButton::Left), to, clock());
+    }
+
+    #[test]
+    fn clicks_select_focus_and_open() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "First");
+        let second = add(&mut app, 1, "Second card");
+        let at = find(&app, "Second card");
+        click(&mut app, at);
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        assert_eq!(app.model.ui.active_column, 1);
+        assert!(app.model.ui.screens.is_empty());
+        // A second click soon after is a double click, which opens it.
+        let at = find(&app, "Second card");
+        click(&mut app, at);
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { task, .. }) if *task == second));
+        // Clicking another card shows it in the drawer.
+        let first = app.model.board.columns[0].tasks[0].id;
+        let at = find(&app, "First");
+        click(&mut app, at);
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { task, .. }) if *task == first));
+        press(&mut app, &[KeyCode::Esc]);
+        // A lane header focuses its lane, a rail entry the rail.
+        let at = find_last(&app, "Done");
+        click(&mut app, at);
+        assert_eq!(app.model.ui.active_column, 2);
+        assert_eq!(app.model.ui.focus, FocusRegion::Rail);
+        let header = find(&app, "In Progress  1");
+        click(&mut app, header);
+        assert_eq!(app.model.ui.active_column, 1);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+        // The view names in the top bar switch views.
+        let at = find(&app, "All tasks");
+        click(&mut app, at);
+        assert_eq!(app.model.ui.view, ViewMode::AllTasks);
+    }
+
+    #[test]
+    fn clicking_a_hint_runs_it() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Task");
+        let at = find(&app, "n/N new");
+        click(&mut app, at);
+        assert!(matches!(top_screen(&app), Some(Screen::Editor(_))));
+        // Only the status line responds while an overlay is open.
+        let at = find_last(&app, "Esc cancel");
+        click(&mut app, at);
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn the_wheel_scrolls_lanes_and_the_drawer() {
+        let (_directory, mut app) = test_app();
+        app.resize(100, 20);
+        let tasks = add_many(&mut app, 10);
+        add_many_to(&mut app, 1, 10);
+        let lane = find(&app, "Task 0");
+        mouse(&mut app, MouseEventKind::ScrollDown, lane, clock());
+        assert_eq!(app.model.selected_task_id(), Some(tasks[1]));
+        // Another lane scrolls without taking the selection.
+        let other = find(&app, "Other 0");
+        mouse(&mut app, MouseEventKind::ScrollDown, other, clock());
+        assert_eq!(app.model.ui.scroll.lane(1), 1);
+        assert_eq!(app.model.selected_task_id(), Some(tasks[1]));
+        mouse(&mut app, MouseEventKind::ScrollUp, other, clock());
+        assert_eq!(app.model.ui.scroll.lane(1), 0);
+        // Over the drawer, it scrolls the description.
+        let long: String = (0..60).map(|line| format!("line {line}\n")).collect();
+        app.model
+            .board
+            .update_task(tasks[1], "Long".to_owned(), long, 0)
+            .unwrap();
+        press(&mut app, &[KeyCode::Enter]);
+        let text = find(&app, "line 0");
+        mouse(&mut app, MouseEventKind::ScrollDown, text, clock());
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Detail { scroll: 3, .. })
+        ));
+    }
+
+    fn add_many_to(app: &mut App, column: usize, count: usize) -> Vec<Uuid> {
+        (0..count)
+            .map(|index| {
+                let title = format!("Other {index}");
+                app.model.board.add_task(column, &title, "", 0).unwrap()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dragging_a_card_moves_it() {
+        let (_directory, mut app) = test_app();
+        let moving = add(&mut app, 0, "Moving");
+        add(&mut app, 1, "Top");
+        add(&mut app, 1, "Bottom");
+        // Onto the top half of "Bottom": between the two.
+        use ratatui::crossterm::event::MouseButton;
+        let from = find(&app, "Moving");
+        let to = find(&app, "Bottom");
+        mouse(
+            &mut app,
+            MouseEventKind::Down(MouseButton::Left),
+            from,
+            clock(),
+        );
+        mouse(
+            &mut app,
+            MouseEventKind::Drag(MouseButton::Left),
+            to,
+            clock(),
+        );
+        let marker = app.model.ui.mouse.drag.and_then(|drag| drag.target);
+        assert!(matches!(
+            marker,
+            Some(crate::app::DropTarget {
+                column: 1,
+                index: Some(1),
+                ..
+            })
+        ));
+        assert!(find(&app, "━━━━").1 == to.1 - 1);
+        mouse(&mut app, MouseEventKind::Up(MouseButton::Left), to, clock());
+        assert_eq!(titles(&app, 1), ["Top", "Moving", "Bottom"]);
+        assert_eq!(app.model.selected_task_id(), Some(moving));
+        assert!(app.model.ui.mouse.drag.is_none());
+        // Dropping it back on itself changes nothing, not even the undo
+        // history.
+        let here = find(&app, "Moving");
+        drag(&mut app, here, (here.0 + 1, here.1));
+        assert_eq!(titles(&app, 1), ["Top", "Moving", "Bottom"]);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(titles(&app, 0), ["Moving"]);
+        // A rail entry drops at the end of its column.
+        let here = find(&app, "Moving");
+        let to = find_last(&app, "Done");
+        drag(&mut app, here, to);
+        assert_eq!(titles(&app, 2), ["Moving"]);
+    }
+
+    #[test]
+    fn dragging_into_a_full_column_asks() {
+        let (_directory, mut app) = test_app();
+        let moving = add(&mut app, 0, "Moving");
+        add(&mut app, 1, "Busy");
+        app.model.board.set_wip_limit(1, Some(1)).unwrap();
+        let from = find(&app, "Moving");
+        let to = find(&app, "Busy");
+        drag(&mut app, from, to);
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmWip { .. })));
+        press(&mut app, &[KeyCode::Char('y')]);
+        assert_eq!(app.model.board.task_location(moving), Some((1, 0)));
     }
 
     #[test]

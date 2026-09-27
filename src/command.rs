@@ -1374,6 +1374,17 @@ pub fn available(context: Context) -> impl Iterator<Item = &'static Command> {
 /// `(keys, label)` pairs. `enabled` can hide commands that do nothing
 /// right now, such as "clear" without a search.
 pub fn hints(context: Context, enabled: impl Fn(CommandId) -> bool) -> Vec<(String, &'static str)> {
+    hint_commands(context, enabled)
+        .into_iter()
+        .map(|(keys, label, _)| (keys, label))
+        .collect()
+}
+
+/// As [`hints`], with the command each hint runs when clicked.
+pub fn hint_commands(
+    context: Context,
+    enabled: impl Fn(CommandId) -> bool,
+) -> Vec<(String, &'static str, CommandId)> {
     let mut commands: Vec<(&Command, Hint)> = available(context)
         .filter(|command| enabled(command.id))
         .filter_map(|command| command.hint.map(|hint| (command, hint)))
@@ -1381,7 +1392,7 @@ pub fn hints(context: Context, enabled: impl Fn(CommandId) -> bool) -> Vec<(Stri
     commands.sort_by_key(|(_, hint)| hint.priority);
     commands
         .into_iter()
-        .map(|(command, hint)| (command.hint_keys(), hint.label))
+        .map(|(command, hint)| (command.hint_keys(), hint.label, command.id))
         .collect()
 }
 

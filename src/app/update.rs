@@ -1,6 +1,7 @@
 //! `update(&mut Model, Action, Clock) -> Vec<Effect>`: the only place the
 //! model changes. It does no I/O, so it can be tested directly.
 
+use ratatui::crossterm::event::MouseEventKind;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -19,6 +20,7 @@ use crate::domain::{Board, BoardError};
 use crate::ui;
 
 mod columns;
+mod mouse;
 
 pub fn update(model: &mut Model, action: Action, clock: Clock) -> Vec<Effect> {
     // An error toast stays until the next key press.
@@ -31,6 +33,9 @@ pub fn update(model: &mut Model, action: Action, clock: Clock) -> Vec<Effect> {
             | Action::GoToLane(_)
             | Action::CancelPrefix
             | Action::Paste(_)
+    ) || matches!(
+        action,
+        Action::Mouse(event) if matches!(event.kind, MouseEventKind::Down(_))
     );
     // A prefix waits for exactly one more key.
     if key_press {
@@ -71,6 +76,7 @@ impl Updater<'_> {
             Action::GoToLane(letter) => self.go_to_lane(letter),
             Action::CancelPrefix => {}
             Action::Paste(text) => self.paste(&text),
+            Action::Mouse(event) => self.mouse(event),
             Action::ExternalEditFinished { target, result } => {
                 self.finish_external_edit(target, result)
             }

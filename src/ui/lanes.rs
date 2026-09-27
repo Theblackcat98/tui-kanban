@@ -12,13 +12,12 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use super::geometry::{self, LaneParts, Page, lane_heights, lane_offset, lane_parts, visible_end};
+use super::geometry::{self, LaneParts, Page, lane_parts};
 use super::text::{self, truncate_text};
 use super::{blend_color, card, faint, fg, muted, put};
 use crate::app::{FocusRegion, Model};
 use crate::clock::Clock;
 use crate::domain::Wip;
-use crate::layout::CARD_GAP;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) fn render(frame: &mut Frame<'_>, page: &Page, model: &Model, clock: Clock) {
@@ -273,33 +272,27 @@ fn render_lane(
         underline(model, column, focused, area.width),
     );
 
-    let visible = model.visible_task_indices(column);
-    if visible.is_empty() {
+    if model.visible_task_indices(column).is_empty() {
         render_empty(frame, &parts, model, column, focused);
         return;
     }
-    let heights = lane_heights(model, column, area.width);
-    let offset = lane_offset(model, column, area);
-    let end = visible_end(&heights, parts.cards.height, offset);
+    let lane = geometry::lane_cards(model, column, area);
     let selected = model.selected_task_id();
     let tasks = &model.board.columns[column].tasks;
-    let mut y = parts.cards.y;
-    for index in offset..end {
-        let task = &tasks[visible[index]];
-        let height = heights[index].min(parts.cards.bottom().saturating_sub(y));
+    for (index, card_area) in lane.cards {
+        let task = &tasks[index];
         card::render(
             frame,
-            Rect::new(area.x, y, area.width, height),
+            card_area,
             model,
             column,
             task,
             focused && selected == Some(task.id),
             clock,
         );
-        y = y.saturating_add(heights[index] + CARD_GAP);
     }
-    more(frame, parts.above, model, "↑", offset);
-    more(frame, parts.below, model, "↓", visible.len() - end);
+    more(frame, parts.above, model, "↑", lane.hidden_above);
+    more(frame, parts.below, model, "↓", lane.hidden_below);
 }
 
 /// "↑ 2 more" or "↓ 3 more", when cards are hidden.

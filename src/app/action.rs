@@ -1,7 +1,7 @@
 //! What can happen ([`Action`]), what the runtime should do about it
 //! ([`Effect`]), and how key presses become actions ([`keymap`]).
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 
 use uuid::Uuid;
 
@@ -27,6 +27,8 @@ pub enum Action {
     CancelPrefix,
     /// Text pasted into the terminal (with bracketed paste).
     Paste(String),
+    /// A click, drag or scroll of the mouse wheel.
+    Mouse(MouseEvent),
     /// The result of an [`Effect::EditExternally`]: the saved text, or
     /// why it couldn't be edited.
     ExternalEditFinished {
