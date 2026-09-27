@@ -70,7 +70,8 @@ pub fn keymap(model: &Model, key: KeyEvent) -> Option<Action> {
         return None;
     }
     let context = model.context();
-    if let Some(pending) = model.ui.pending {
+    // Only quitting works while the terminal is too small.
+    if let Some(pending) = model.ui.pending.filter(|_| context != Context::TooSmall) {
         // After Space, any key does what it would have done anyway.
         if pending.prefix == ' ' {
             return Some(match key.code {

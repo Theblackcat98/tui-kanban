@@ -72,6 +72,10 @@ impl Updater<'_> {
             }
             Action::Resize(width, height) => {
                 self.model.ui.viewport = (width, height);
+                // A prefix can't complete while only quitting works.
+                if self.model.too_small() {
+                    self.model.ui.pending = None;
+                }
                 if !self.model.breakpoint().shows_rail() {
                     self.model.ui.focus = FocusRegion::Cards;
                 }
@@ -262,7 +266,7 @@ impl Updater<'_> {
             CommandId::ApplySearch => self.model.ui.search.input = None,
             CommandId::SearchDown | CommandId::NextMatch => self.step_match(1),
             CommandId::SearchUp | CommandId::PreviousMatch => self.step_match(-1),
-            CommandId::RemoveFilterTerm => {
+            CommandId::RemoveFilterTerm if !self.model.ui.search.query.is_empty() => {
                 let query = &self.model.ui.search.query;
                 let kept = query
                     .trim_end()
@@ -272,6 +276,7 @@ impl Updater<'_> {
                     .to_owned();
                 self.set_query(kept);
             }
+            CommandId::RemoveFilterTerm => {}
             CommandId::ScrollUp => self.scroll_detail(-10),
             CommandId::ScrollDown => self.scroll_detail(10),
             CommandId::LineUp => self.scroll_detail(-1),

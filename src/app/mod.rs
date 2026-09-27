@@ -1281,6 +1281,23 @@ mod tests {
     }
 
     #[test]
+    fn stray_keys_do_nothing_harmful() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 1, "Only task");
+        // Backspace with no search doesn't move the selection.
+        press(&mut app, &[KeyCode::Char('h'), KeyCode::Backspace]);
+        assert_eq!(app.model.ui.active_column, 0);
+        // A prefix left pending when the terminal shrinks does nothing.
+        press(&mut app, &[KeyCode::Char('g')]);
+        app.resize(30, 8);
+        press(&mut app, &[KeyCode::Char('i')]);
+        assert_eq!(app.model.ui.active_column, 0);
+        app.resize(100, 30);
+        press(&mut app, &[KeyCode::Char('2')]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+    }
+
+    #[test]
     fn a_held_prefix_wakes_the_loop_for_which_key() {
         let (_directory, mut app) = test_app();
         let clock = clock();
