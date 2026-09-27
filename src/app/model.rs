@@ -8,6 +8,7 @@
 use std::time::Instant;
 use uuid::Uuid;
 
+use super::history::History;
 use super::input::TextInput;
 use crate::animation::{AnimationEngine, AnimationSettings};
 use crate::command::{CommandId, Context};
@@ -166,6 +167,7 @@ pub struct Ui {
 pub struct Session {
     pub save_state: SaveState,
     pub toast: Option<Toast>,
+    pub history: History,
 }
 
 #[derive(Clone, Debug)]
@@ -233,6 +235,8 @@ impl Model {
         match id {
             CommandId::ClearSearch => self.ui.search.is_active(),
             CommandId::ToggleFocus => self.breakpoint().shows_rail(),
+            CommandId::Undo => self.session.history.can_undo(),
+            CommandId::Redo => self.session.history.can_redo(),
             _ => true,
         }
     }

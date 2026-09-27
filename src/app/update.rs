@@ -5,6 +5,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use super::action::{Action, Effect};
+use super::history::Entry;
 use super::input::TextInput;
 use super::model::{
     EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Toast, ToastKind, ViewMode,
@@ -129,6 +130,8 @@ impl Updater<'_> {
             }
             CommandId::MoveTaskLeft => self.move_task(-1),
             CommandId::MoveTaskRight => self.move_task(1),
+            CommandId::Undo => self.undo(),
+            CommandId::Redo => self.redo(),
             CommandId::Search => {
                 let search = &mut self.model.ui.search;
                 search.input = Some(TextInput::new(search.query.clone()));
@@ -231,18 +234,79 @@ impl Updater<'_> {
         self.animate(AnimationKind::Toast, 220);
     }
 
-    /// Applies a change to the board and asks the runtime to save it. If
-    /// the change is rejected, the board is left as it was.
+    /// Applies a change to the board, records the previous board so the
+    /// change can be undone, and asks the runtime to save. If the change
+    /// is rejected, the board is left as it was.
     fn change<T>(
         &mut self,
+        label: String,
         change: impl FnOnce(&mut Board, i64) -> Result<T, BoardError>,
     ) -> Result<T, String> {
         let mut board = self.model.board.clone();
         let value =
             change(&mut board, self.clock.wall_millis).map_err(|error| error.to_string())?;
-        self.model.board = board;
+        let previous = std::mem::replace(&mut self.model.board, board);
+        self.model.session.history.record(Entry {
+            board: previous,
+            label,
+            selected: self.model.ui.selected,
+        });
         self.effects.push(Effect::Save);
         Ok(value)
+    }
+
+    fn current_entry(&self) -> Entry {
+        Entry {
+            board: self.model.board.clone(),
+            label: String::new(),
+            selected: self.model.ui.selected,
+        }
+    }
+
+    fn undo(&mut self) {
+        let current = self.current_entry();
+        match self.model.session.history.undo(current) {
+            Some(entry) => self.restore(entry, "Undid"),
+            None => self.toast("Nothing to undo", ToastKind::Info, Duration::from_secs(2)),
+        }
+    }
+
+    fn redo(&mut self) {
+        let current = self.current_entry();
+        match self.model.session.history.redo(current) {
+            Some(entry) => self.restore(entry, "Redid"),
+            None => self.toast("Nothing to redo", ToastKind::Info, Duration::from_secs(2)),
+        }
+    }
+
+    fn restore(&mut self, entry: Entry, verb: &str) {
+        self.model.board = entry.board;
+        self.model.ui.selected = entry.selected;
+        self.model.reconcile_selection();
+        self.effects.push(Effect::Save);
+        self.toast(
+            format!("{verb}: {}", entry.label),
+            ToastKind::Info,
+            Duration::from_secs(3),
+        );
+        self.animate(AnimationKind::CardMove, 220);
+    }
+
+    fn task_title(&self, id: Uuid) -> String {
+        self.model
+            .board
+            .task(id)
+            .map(|task| task.title.clone())
+            .unwrap_or_default()
+    }
+
+    fn column_name(&self, index: usize) -> String {
+        self.model
+            .board
+            .columns
+            .get(index)
+            .map(|column| column.name.clone())
+            .unwrap_or_default()
     }
 
     fn save_editor(&mut self) {
@@ -257,11 +321,17 @@ impl Updater<'_> {
             return;
         }
         let column = self.model.ui.active_column;
+        let label = match task_id {
+            Some(_) => format!("edit '{title}'"),
+            None => format!("add '{title}'"),
+        };
         let result = match task_id {
-            Some(id) => {
-                self.change(|board, now| board.update_task(id, title, description, now).map(|_| id))
-            }
-            None => self.change(|board, now| board.add_task(column, title, description, now)),
+            Some(id) => self.change(label, |board, now| {
+                board.update_task(id, title, description, now).map(|_| id)
+            }),
+            None => self.change(label, |board, now| {
+                board.add_task(column, title, description, now)
+            }),
         };
         match result {
             Ok(id) => {
@@ -296,7 +366,8 @@ impl Updater<'_> {
                 })
                 .copied()
         });
-        if let Err(message) = self.change(|board, _| board.remove_task(id).map(|_| ())) {
+        let label = format!("delete '{}'", self.task_title(id));
+        if let Err(message) = self.change(label, |board, _| board.remove_task(id).map(|_| ())) {
             self.toast(message, ToastKind::Error, Duration::from_secs(4));
             return;
         }
@@ -308,7 +379,11 @@ impl Updater<'_> {
         }
         self.model.ui.selected = neighbour;
         self.model.reconcile_selection();
-        self.toast("Task deleted", ToastKind::Info, Duration::from_secs(3));
+        self.toast(
+            "Task deleted · u to undo",
+            ToastKind::Info,
+            Duration::from_secs(5),
+        );
         self.animate(AnimationKind::CardMove, 220);
     }
 
@@ -325,7 +400,12 @@ impl Updater<'_> {
         if target >= self.model.board.columns.len() {
             return;
         }
-        match self.change(|board, now| board.move_task(id, target, None, now)) {
+        let label = format!(
+            "move '{}' → {}",
+            self.task_title(id),
+            self.column_name(target)
+        );
+        match self.change(label, |board, now| board.move_task(id, target, None, now)) {
             Ok(outcome) => {
                 self.model.select_task(outcome.task_id);
                 self.model.reconcile_selection();

@@ -23,12 +23,12 @@ expression: "harness.screen(100, 30)"
  │   e                   edit task                       Esc / q / ?      help: close            │││
  │   d                   delete task                     ?                this help              │││
  │   H/L                 move task left / right          q                quit                   │╯│
- │   /                   search                          Ctrl+C           quit (anywhere)        │ │
+ │   u/U  Ctrl+Z/Ctrl+R  undo / redo                     Ctrl+C           quit (anywhere)        │ │
+ │   /                   search                                                                  │ │
  │   Esc                 clear search                                                            │ │
  │                                                                                               │ │
  │ Press any key to return                                                                       │ │
  ╰───────────────────────────────────────────────────────────────────────────────────────────────╯ │
-                    │                                                                              │
                     │                                                                              │
                     ╰──────────────────────────────────────────────────────────────────────────────╯
  j/k scroll  •  Esc close

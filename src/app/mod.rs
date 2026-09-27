@@ -9,11 +9,13 @@
 //! ```
 
 mod action;
+mod history;
 mod input;
 mod model;
 mod update;
 
 pub use action::{Action, Effect, keymap};
+pub use history::History;
 pub use input::TextInput;
 pub use model::{
     EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Search, Session, Toast,
@@ -529,6 +531,79 @@ mod tests {
             Some(ToastKind::Error)
         );
         assert!(app.finish().is_err());
+    }
+
+    fn toast_message(app: &App) -> &str {
+        app.model
+            .session
+            .toast
+            .as_ref()
+            .map_or("", |toast| toast.message.as_str())
+    }
+
+    #[test]
+    fn undo_restores_a_deleted_task_and_its_selection() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "First");
+        let doomed = add(&mut app, 0, "Doomed");
+        press(
+            &mut app,
+            &[KeyCode::Down, KeyCode::Char('d'), KeyCode::Char('y')],
+        );
+        assert_eq!(app.model.board.task_count(), 1);
+        assert_eq!(toast_message(&app), "Task deleted · u to undo");
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task_count(), 2);
+        assert_eq!(app.model.selected_task_id(), Some(doomed));
+        assert_eq!(toast_message(&app), "Undid: delete 'Doomed'");
+        // The undo was saved, too.
+        assert_eq!(app.store.load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn undo_and_redo_a_move() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Ship it");
+        press(&mut app, &[KeyCode::Char('L'), KeyCode::Char('L')]);
+        assert_eq!(app.model.board.task_location(id), Some((2, 0)));
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        assert_eq!(toast_message(&app), "Undid: move 'Ship it' → Done");
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert_eq!(app.model.board.task_location(id), Some((0, 0)));
+        press(&mut app, &[KeyCode::Char('U')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        assert_eq!(toast_message(&app), "Redid: move 'Ship it' → In Progress");
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert_eq!(app.model.board.task_location(id), Some((2, 0)));
+        assert_eq!(app.model.selected_task_id(), Some(id));
+    }
+
+    #[test]
+    fn undo_an_edit_and_an_add() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Draft");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::Char('e'), KeyCode::End],
+        );
+        type_text(&mut app, " v2");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[0].tasks[0].title, "Draft v2");
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.columns[0].tasks[0].title, "Draft");
+        assert_eq!(toast_message(&app), "Undid: edit 'Draft v2'");
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task_count(), 0);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(toast_message(&app), "Nothing to undo");
     }
 
     #[test]
