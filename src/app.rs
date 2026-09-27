@@ -650,7 +650,7 @@ impl App {
         {
             self.mode = Mode::Editor(EditorState::from_task(task));
             self.animations.start(
-                AnimationKind::Drawer,
+                AnimationKind::Modal,
                 Duration::from_millis(180),
                 self.clock.instant,
             );
@@ -989,6 +989,25 @@ mod tests {
             app.next_timeout(clock.instant),
             crate::animation::FRAME_INTERVAL
         );
+    }
+
+    #[test]
+    fn edit_and_new_task_modals_both_animate() {
+        let clock = Clock::fixed(0);
+        let (_directory, mut app) = test_app_at(clock, true);
+        app.board.add_task(0, "Edit me", "", 0).unwrap();
+        for opener in ['n', 'e'] {
+            app.mode = Mode::Dashboard;
+            app.animations.finish(AnimationKind::Modal);
+            app.handle_key(key(KeyCode::Char(opener)), clock);
+            assert!(matches!(app.mode, Mode::Editor(_)), "{opener}");
+            assert!(
+                app.animations
+                    .progress(AnimationKind::Modal, clock.instant)
+                    .is_some(),
+                "{opener} should start the modal animation the editor reads"
+            );
+        }
     }
 
     #[test]
