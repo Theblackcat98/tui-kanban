@@ -13,6 +13,9 @@ use crate::theme::{Theme, shared_theme};
 use crate::tui::event::accepts_key;
 use crate::ui;
 
+/// How often the idle event loop wakes to refresh relative times.
+const IDLE_REFRESH: Duration = Duration::from_secs(1);
+
 #[derive(Debug, Parser)]
 #[command(name = "tui-kanban", about = "A beautiful terminal Kanban board")]
 pub struct Cli {
@@ -299,10 +302,18 @@ impl App {
         }
     }
 
+    /// How long the event loop may wait for input before it has to redraw:
+    /// the next animation frame, the moment a toast expires, or an idle
+    /// refresh so relative times such as "5m" stay current.
     pub fn next_timeout(&self, now: Instant) -> Duration {
-        self.animations
-            .next_frame_timeout(now)
-            .min(Duration::from_millis(100))
+        let mut timeout = IDLE_REFRESH;
+        if let Some(frame) = self.animations.next_frame_timeout(now) {
+            timeout = timeout.min(frame);
+        }
+        if let Some(toast) = &self.toast {
+            timeout = timeout.min(toast.expires_at.saturating_duration_since(now));
+        }
+        timeout
     }
 
     pub fn flush(&mut self) -> Result<(), String> {
@@ -898,9 +909,16 @@ pub fn run() -> Result<()> {
 }
 
 fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+    let mut needs_redraw = true;
     loop {
+        // Tick on every iteration, not only when polling times out, so
+        // toasts expire and animations finish while keys keep arriving.
         let clock = Clock::now();
-        terminal.draw(|frame| ui::render(frame, app, clock))?;
+        app.tick(clock);
+        if needs_redraw {
+            terminal.draw(|frame| ui::render(frame, app, clock))?;
+            needs_redraw = false;
+        }
         if app.should_quit {
             return app.flush().map_err(anyhow::Error::msg);
         }
@@ -908,12 +926,17 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
         let timeout = app.next_timeout(clock.instant);
         if event::poll(timeout)? {
             match event::read()? {
-                Event::Key(key) => app.handle_key(key, Clock::now()),
-                Event::Resize(_, _) => {}
+                Event::Key(key) => {
+                    app.handle_key(key, Clock::now());
+                    needs_redraw = true;
+                }
+                Event::Resize(_, _) => needs_redraw = true,
                 _ => {}
             }
         } else {
-            app.tick(Clock::now());
+            // An animation frame is due, a toast expired, or it is time
+            // for the idle refresh.
+            needs_redraw = true;
         }
     }
 }
@@ -925,14 +948,48 @@ mod tests {
     use tempfile::TempDir;
 
     fn test_app() -> (TempDir, App) {
+        test_app_at(Clock::fixed(0), false)
+    }
+
+    fn test_app_at(clock: Clock, animations: bool) -> (TempDir, App) {
         let directory = tempfile::tempdir().unwrap();
         let store = JsonStore::new(directory.path().join("board.json"));
-        let app = App::new(store, false, Clock::fixed(0)).unwrap();
+        let app = App::new(store, animations, clock).unwrap();
         (directory, app)
     }
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn idle_loop_waits_for_the_refresh_interval() {
+        let (_directory, app) = test_app();
+        assert_eq!(app.next_timeout(Instant::now()), IDLE_REFRESH);
+    }
+
+    #[test]
+    fn animations_run_at_frame_rate() {
+        let clock = Clock::fixed(0);
+        let (_directory, mut app) = test_app_at(clock, true);
+        app.handle_key(key(KeyCode::Char('?')), clock);
+        assert_eq!(
+            app.next_timeout(clock.instant),
+            crate::animation::FRAME_INTERVAL
+        );
+    }
+
+    #[test]
+    fn toasts_wake_the_loop_when_they_expire() {
+        let clock = Clock::fixed(0);
+        let (_directory, mut app) = test_app_at(clock, false);
+        app.show_toast("hello", ToastKind::Info, Duration::from_millis(400));
+        assert_eq!(
+            app.next_timeout(clock.instant + Duration::from_millis(100)),
+            Duration::from_millis(300)
+        );
+        app.tick(clock.advance(Duration::from_millis(400)));
+        assert!(app.toast.is_none());
     }
 
     #[test]
