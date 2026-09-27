@@ -2,12 +2,13 @@ use crate::domain::{Board, BoardError};
 use atomic_write_file::AtomicWriteFile;
 use std::fmt;
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub enum StoreError {
     Io(std::io::Error),
+    Read(PathBuf, std::io::Error),
     Json(serde_json::Error),
     Board(BoardError),
     Write(String),
@@ -17,6 +18,9 @@ impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(error) => write!(formatter, "board I/O error: {error}"),
+            Self::Read(path, error) => {
+                write!(formatter, "could not read {}: {error}", path.display())
+            }
             Self::Json(error) => write!(formatter, "invalid board JSON: {error}"),
             Self::Board(error) => write!(formatter, "invalid board data: {error}"),
             Self::Write(message) => write!(formatter, "could not write board: {message}"),
@@ -58,11 +62,16 @@ impl JsonStore {
         &self.path
     }
 
+    /// Loads the board, or returns `Ok(None)` if the file does not exist.
+    /// Any other problem, such as permission denied, is an error: treating
+    /// it as missing would open an empty board that could overwrite the
+    /// real one.
     pub fn load(&self) -> Result<Option<Board>, StoreError> {
-        if !self.path.exists() {
-            return Ok(None);
-        }
-        let contents = fs::read_to_string(&self.path)?;
+        let contents = match fs::read_to_string(&self.path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(StoreError::Read(self.path.clone(), error)),
+        };
         let board = serde_json::from_str::<Board>(&contents)?;
         board.validate()?;
         Ok(Some(board))
@@ -117,6 +126,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let store = JsonStore::new(directory.path().join("missing.json"));
         assert!(store.load().unwrap().is_none());
+    }
+
+    #[test]
+    fn unreadable_file_is_an_error_not_missing() {
+        let directory = tempfile::tempdir().unwrap();
+        // A directory where the file should be can't be read as a file,
+        // on every platform and even when running as root.
+        let path = directory.path().join("board.json");
+        fs::create_dir(&path).unwrap();
+        let error = JsonStore::new(&path).load().unwrap_err();
+        assert!(matches!(error, StoreError::Read(..)), "{error:?}");
+        assert!(error.to_string().contains("board.json"), "{error}");
     }
 
     #[test]
