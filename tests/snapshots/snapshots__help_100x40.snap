@@ -10,29 +10,29 @@ expression: "harness.screen(100, 40)"
    Done    2        ││                                                                            ││
                     ││Cover install, usage, keys and the file format.                             ││
                     ││ Backlog  •  updated 1d                                                     ││
-                    │╭ Keyboard shortcuts ────────────────────────────────────╮───────────────────╯│
-                    ││Navigation                                              │───────────────────╮│
-                    ││v                toggle Board / All tasks               │                   ││
-                    ││Tab              focus rail / cards                     │                   ││
-                    ││h / l or ← / →   select column                          │                   ││
-                    ││j / k or ↑ / ↓   select card                            │                   ││
-                    ││H / L            move selected card                     │───────────────────╯│
-                    ││PageUp / PageDn  move by five cards                     │───────────────────╮│
-                    ││                                                        │                   ││
-                    ││Tasks                                                   │                   ││
-                    ││n                new task                               │                   ││
-                    ││e                edit task                              │                   ││
-                    ││d                delete task                            │───────────────────╯│
-                    ││Enter            open details                           │                    │
-                    ││/                search                                 │                    │
-                    ││                                                        │                    │
-                    ││Details                                                 │                    │
-                    ││PageUp / PageDn  scroll description                     │                    │
-                    ││H / L            move task from drawer                  │                    │
-                    ││                                                        │                    │
-                    ││General                                                 │                    │
-                    ││?                this help                              │                    │
-                    │╰────────────────────────────────────────────────────────╯                    │
+                    │╰────────────────────────────────────────────────────────────────────────────╯│
+                    │╭────────────────────────────────────────────────────────────────────────────╮│
+   ╭ Keyboard shortcuts ────────────────────────────────────────────────────────────────────────╮ ││
+   │ Navigation                                    Details                                      │ ││
+   │   v                toggle Board / All tasks     PageUp / PageDn  scroll description        │ ││
+   │   Tab              focus rail / cards           H / L            move task from drawer     │ ││
+   │   h / l or ← / →   select column                                                           │─╯│
+   │   j / k or ↑ / ↓   select card                General                                      │─╮│
+   │   Home / End       first / last card            ?                this help                 │ ││
+   │   PageUp / PageDn  move by five cards           Esc              close or cancel           │ ││
+   │                                                 q / Ctrl+C       quit                      │ ││
+   │ Tasks                                                                                      │ ││
+   │   n                new task                                                                │─╯│
+   │   e                edit task                                                               │  │
+   │   d                delete task                                                             │  │
+   │   H / L            move task to column                                                     │  │
+   │   Enter            open details                                                            │  │
+   │   /                search                                                                  │  │
+   │                                                                                            │  │
+   │ Press any key to return                                                                    │  │
+   ╰────────────────────────────────────────────────────────────────────────────────────────────╯  │
+                    │                                                                              │
+                    │                                                                              │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
@@ -41,4 +41,4 @@ expression: "harness.screen(100, 40)"
                     │                                                                              │
                     │                                                                              │
                     ╰──────────────────────────────────────────────────────────────────────────────╯
- any key close
+ j/k scroll  •  any other key close

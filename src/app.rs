@@ -217,6 +217,7 @@ pub struct App {
     pub focus: FocusRegion,
     pub all_tasks_scroll: u16,
     pub detail_scroll: u16,
+    pub help_scroll: u16,
     pub mode: Mode,
     pub search_query: String,
     pub search_input: TextInput,
@@ -246,6 +247,7 @@ impl App {
             focus: FocusRegion::Cards,
             all_tasks_scroll: 0,
             detail_scroll: 0,
+            help_scroll: 0,
             mode: Mode::Dashboard,
             search_query: String::new(),
             search_input: TextInput::new(String::new()),
@@ -445,6 +447,7 @@ impl App {
             KeyCode::Char('d') | KeyCode::Char('D') => self.open_delete_confirmation(),
             KeyCode::Char('?') => {
                 self.mode = Mode::Help;
+                self.help_scroll = 0;
                 self.animations.start(
                     AnimationKind::Modal,
                     Duration::from_millis(180),
@@ -616,8 +619,17 @@ impl App {
         }
     }
 
-    fn handle_help_key(&mut self, _key: KeyEvent) {
-        self.mode = Mode::Dashboard;
+    fn handle_help_key(&mut self, key: KeyEvent) {
+        let max_scroll = ui::help_line_count().saturating_sub(1) as u16;
+        match key.code {
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.help_scroll = self.help_scroll.saturating_add(1).min(max_scroll);
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.help_scroll = self.help_scroll.saturating_sub(1);
+            }
+            _ => self.mode = Mode::Dashboard,
+        }
     }
 
     fn handle_confirm_key(&mut self, key: KeyEvent) {

@@ -10,7 +10,7 @@ use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Duration;
 use tempfile::TempDir;
-use tui_kanban::app::{App, FocusRegion, Toast, ToastKind, ViewMode};
+use tui_kanban::app::{App, FocusRegion, Mode, Toast, ToastKind, ViewMode};
 use tui_kanban::clock::Clock;
 use tui_kanban::domain::{Board, Column, SCHEMA_VERSION, Task};
 use tui_kanban::storage::JsonStore;
@@ -277,6 +277,12 @@ fn help_overlay() {
     harness.keys(&[KeyCode::Char('?')]);
     screen_snapshot!("help_100x30", harness, 100, 30);
     screen_snapshot!("help_100x40", harness, 100, 40);
+    // Too short for all of it: the overlay scrolls.
+    screen_snapshot!("help_60x20", harness, 60, 20);
+    harness.keys(&[KeyCode::Char('j'); 30]);
+    screen_snapshot!("help_60x20_scrolled_to_end", harness, 60, 20);
+    harness.keys(&[KeyCode::Char('x')]);
+    assert!(matches!(harness.app.mode, Mode::Dashboard));
 }
 
 #[test]

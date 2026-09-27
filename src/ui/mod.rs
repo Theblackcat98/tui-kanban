@@ -111,7 +111,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
         Mode::Dashboard => "tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •  ? help",
         Mode::Editor(_) => "tab switch  •  enter save  •  esc cancel",
         Mode::Detail(_) => "e edit  •  H/L move  •  PgUp/PgDn scroll  •  esc close",
-        Mode::Help => "any key close",
+        Mode::Help => "j/k scroll  •  any other key close",
         Mode::ConfirmDelete(_) => "y confirm  •  n cancel",
     };
     let mut spans = vec![Span::styled(format!(" {hints} "), muted_style(app))];
@@ -133,6 +133,10 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
         ));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+pub(crate) fn help_line_count() -> usize {
+    help::line_count()
 }
 
 pub(crate) fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
