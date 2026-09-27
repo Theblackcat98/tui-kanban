@@ -329,6 +329,8 @@ fn twelve_columns() {
     // #25: the lanes scroll sideways to follow the active column.
     harness.keys(&[KeyCode::Char('l'); 5]);
     screen_snapshot!("twelve_columns_scrolled_100x30", harness, 100, 30);
+    // #24: a narrow terminal shows one lane, headed by a tab strip.
+    screen_snapshot!("twelve_columns_tabs_60x20", harness, 60, 20);
 }
 
 #[test]

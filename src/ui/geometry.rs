@@ -130,7 +130,7 @@ pub(crate) fn lanes(model: &Model, page: &Page) -> Vec<(usize, Rect)> {
         .collect()
 }
 
-/// The columns shown as lanes: as many as fit at [`LANE_MIN_WIDTH`] or
+/// The columns shown as lanes: as many as fit at [`layout::LANE_MIN_WIDTH`] or
 /// wider (one at the Compact breakpoint), starting from the remembered
 /// first lane and scrolled sideways just enough to show the active one.
 pub(crate) fn lane_range(model: &Model, page: &Page) -> std::ops::Range<usize> {

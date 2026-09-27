@@ -2,14 +2,14 @@
 source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
- Project Board   Board · All tasks
+ Snapshot Board   Board · All tasks
 
- Backlog 0 · In Progress 0 · Done 0
+ ‹ Stage 5 1 · Stage 6 1 · Stage 7 1 · Stage 8 1 ›
  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
- No tasks yet
- n to add one
- ? for all keys
+ ▌ Task in stage 6
+ ▌ ◷ 1h ago
+
 
 
 

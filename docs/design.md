@@ -104,6 +104,9 @@ Backlog  3
 - Cards scroll by whole cards, never partially. `↑ 2 more` / `↓ 3 more`
   show what is hidden. Each lane remembers its own scroll position.
 - Empty: `No tasks yet`, plus `n to add one` in the focused lane.
+- At the Compact breakpoint the header is a tab strip instead:
+  `‹ Backlog 3 · In Progress 2 · Done 5 ›`, with the active column in
+  its lane colour and arrows when columns are off-screen.
 
 ### Card
 

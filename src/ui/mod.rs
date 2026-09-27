@@ -1,5 +1,5 @@
 //! The view: draws the model. Nothing here changes state. The layout is
-//! worked out in [`geometry`], and the look follows `docs/design.md`.
+//! worked out in `geometry`, and the look follows `docs/design.md`.
 
 mod all_tasks;
 mod bars;

@@ -31,11 +31,20 @@ pub(crate) fn render(frame: &mut Frame<'_>, page: &Page, model: &Model, clock: C
         );
         return;
     }
+    // At the Compact breakpoint the one lane's header is a tab strip that
+    // also names the other columns.
+    let tabs = !page.breakpoint.shows_several_lanes();
     for (column, area) in geometry::lanes(model, page) {
-        render_lane(frame, area, model, column, clock);
+        render_lane(frame, area, model, column, !tabs, clock);
+        if tabs {
+            render_tabs(frame, lane_parts(area).header, model);
+        }
     }
-    let range = geometry::lane_range(model, page);
+    if tabs {
+        return;
+    }
     let row = geometry::lane_overflow_row(page);
+    let range = geometry::lane_range(model, page);
     if range.start > 0 {
         put(
             frame,
@@ -59,6 +68,101 @@ pub(crate) fn render(frame: &mut Frame<'_>, page: &Page, model: &Model, clock: C
             width,
             Line::from(Span::styled(text, faint(model))),
         );
+    }
+}
+
+/// The longest a column name gets in the tab strip.
+const TAB_NAME_WIDTH: usize = 16;
+
+/// The tab strip that heads the single lane at the Compact breakpoint,
+/// naming the columns around the active one:
+///
+/// ```text
+/// ‹ Backlog 3 · In Progress 2 · Done 5 ›
+/// ```
+fn render_tabs(frame: &mut Frame<'_>, row: Rect, model: &Model) {
+    if row.is_empty() {
+        return;
+    }
+    let tabs = tab_labels(model);
+    let (start, end) = tab_window(&tabs, model.ui.active_column, row.width as usize);
+    let mut spans = Vec::new();
+    if start > 0 {
+        spans.push(Span::styled("‹ ", faint(model)));
+    }
+    for (index, (name, count)) in tabs.iter().enumerate().take(end).skip(start) {
+        if index > start {
+            spans.push(Span::styled(" · ", faint(model)));
+        }
+        if index == model.ui.active_column {
+            let theme = &model.ui.theme;
+            let style =
+                fg(theme.lane(index)).add_modifier(Modifier::BOLD | theme.selected_modifier);
+            spans.push(Span::styled(format!("{name} {count}"), style));
+        } else {
+            spans.push(Span::styled(name.clone(), muted(model)));
+            spans.push(Span::styled(format!(" {count}"), faint(model)));
+        }
+    }
+    if end < tabs.len() {
+        spans.push(Span::styled(" ›", faint(model)));
+    }
+    put(frame, row.x, row.y, row.width, Line::from(spans));
+}
+
+fn tab_labels(model: &Model) -> Vec<(String, String)> {
+    model
+        .board
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            (
+                truncate_text(&column.name, TAB_NAME_WIDTH),
+                count_label(model, index),
+            )
+        })
+        .collect()
+}
+
+/// The tabs that fit in `width` cells: the active one, then its
+/// neighbours, alternating right and left, while they fit. Room is kept
+/// for the arrows at each end.
+fn tab_window(tabs: &[(String, String)], active: usize, width: usize) -> (usize, usize) {
+    if tabs.is_empty() {
+        return (0, 0);
+    }
+    let tab_width = |index: usize| {
+        let (name, count) = &tabs[index];
+        text::width(name) + 1 + count.len()
+    };
+    let active = active.min(tabs.len() - 1);
+    let room = width.saturating_sub(4);
+    let (mut start, mut end) = (active, active + 1);
+    let mut used = tab_width(active);
+    loop {
+        let mut grew = false;
+        for right in [true, false] {
+            let candidate = if right {
+                (end < tabs.len()).then_some(end)
+            } else {
+                start.checked_sub(1)
+            };
+            let Some(index) = candidate else { continue };
+            let extra = 3 + tab_width(index);
+            if used + extra <= room {
+                used += extra;
+                if right {
+                    end += 1;
+                } else {
+                    start -= 1;
+                }
+                grew = true;
+            }
+        }
+        if !grew {
+            return (start, end);
+        }
     }
 }
 
@@ -114,16 +218,25 @@ pub(crate) fn underline(model: &Model, column: usize, focused: bool, width: u16)
     Line::from(Span::styled("▔".repeat(width as usize), style))
 }
 
-fn render_lane(frame: &mut Frame<'_>, area: Rect, model: &Model, column: usize, clock: Clock) {
+fn render_lane(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    column: usize,
+    header: bool,
+    clock: Clock,
+) {
     let parts = lane_parts(area);
     let focused = model.ui.focus == FocusRegion::Cards && model.ui.active_column == column;
-    put(
-        frame,
-        parts.header.x,
-        parts.header.y,
-        parts.header.width * parts.header.height,
-        header_line(model, column, focused, area.width),
-    );
+    if header {
+        put(
+            frame,
+            parts.header.x,
+            parts.header.y,
+            parts.header.width * parts.header.height,
+            header_line(model, column, focused, area.width),
+        );
+    }
     put(
         frame,
         parts.underline.x,
@@ -196,5 +309,30 @@ fn render_empty(frame: &mut Frame<'_>, parts: &LaneParts, model: &Model, focused
             area.width,
             Line::from(Span::styled(text, faint(model))),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tabs(names: &[&str]) -> Vec<(String, String)> {
+        names
+            .iter()
+            .map(|name| (name.to_string(), "1".to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn tab_window_centres_on_the_active_tab() {
+        let tabs = tabs(&["aaaa", "bbbb", "cccc", "dddd", "eeee"]);
+        // Each tab is 6 cells, plus 3 between them and 4 for the arrows.
+        assert_eq!(tab_window(&tabs, 0, 100), (0, 5));
+        assert_eq!(tab_window(&tabs, 2, 4 + 6 + 9 + 9), (1, 4));
+        assert_eq!(tab_window(&tabs, 4, 4 + 6 + 9), (3, 5));
+        assert_eq!(tab_window(&tabs, 0, 4 + 6 + 9), (0, 2));
+        // The active tab is always shown, even when nothing fits.
+        assert_eq!(tab_window(&tabs, 3, 0), (3, 4));
+        assert_eq!(tab_window(&[], 0, 50), (0, 0));
     }
 }
