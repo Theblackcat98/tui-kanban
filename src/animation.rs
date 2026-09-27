@@ -1,5 +1,8 @@
 use std::time::{Duration, Instant};
 
+/// The frame interval while an animation is running (~30 FPS).
+pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AnimationSettings {
     pub enabled: bool,
@@ -22,10 +25,10 @@ pub struct Animation {
 }
 
 impl Animation {
-    pub fn new(kind: AnimationKind, duration: Duration) -> Self {
+    pub fn new(kind: AnimationKind, duration: Duration, now: Instant) -> Self {
         Self {
             kind,
-            started_at: Instant::now(),
+            started_at: now,
             duration,
         }
     }
@@ -61,23 +64,18 @@ impl AnimationEngine {
         }
     }
 
-    pub fn start(&mut self, kind: AnimationKind, duration: Duration) {
+    pub fn start(&mut self, kind: AnimationKind, duration: Duration, now: Instant) {
         if self.settings.enabled {
-            self.animations.push(Animation::new(kind, duration));
+            self.animations.push(Animation::new(kind, duration, now));
         }
     }
 
-    pub fn is_active(&self, now: Instant) -> bool {
-        self.settings.enabled
-            && self
-                .animations
-                .iter()
-                .any(|animation| !animation.is_finished(now))
-    }
-
-    pub fn next_frame_timeout(&self, now: Instant) -> Duration {
+    /// How long to wait before drawing the next frame, or `None` when no
+    /// animation is running. Frames are at most [`FRAME_INTERVAL`] apart,
+    /// and the last one lands when the shortest animation finishes.
+    pub fn next_frame_timeout(&self, now: Instant) -> Option<Duration> {
         if !self.settings.enabled {
-            return Duration::from_millis(100);
+            return None;
         }
         self.animations
             .iter()
@@ -88,7 +86,7 @@ impl AnimationEngine {
                 remaining.filter(|duration| !duration.is_zero())
             })
             .min()
-            .unwrap_or_else(|| Duration::from_millis(100))
+            .map(|remaining| remaining.min(FRAME_INTERVAL))
     }
 
     pub fn progress(&self, kind: AnimationKind, now: Instant) -> Option<f32> {
@@ -113,14 +111,6 @@ pub fn ease_out_cubic(value: f32) -> f32 {
     1.0 - (1.0 - value).powi(3)
 }
 
-pub fn ease_in_out_cubic(value: f32) -> f32 {
-    if value < 0.5 {
-        4.0 * value * value * value
-    } else {
-        1.0 - ((-2.0 * value + 2.0).powi(3) / 2.0)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,8 +118,12 @@ mod tests {
     #[test]
     fn disabled_engine_does_not_schedule_work() {
         let mut engine = AnimationEngine::new(AnimationSettings { enabled: false });
-        engine.start(AnimationKind::Modal, Duration::from_millis(200));
-        assert!(!engine.is_active(Instant::now()));
+        engine.start(
+            AnimationKind::Modal,
+            Duration::from_millis(200),
+            Instant::now(),
+        );
+        assert_eq!(engine.next_frame_timeout(Instant::now()), None);
         assert_eq!(engine.progress(AnimationKind::Modal, Instant::now()), None);
     }
 
@@ -137,12 +131,33 @@ mod tests {
     fn enabled_engine_reports_progress() {
         let mut engine = AnimationEngine::new(AnimationSettings { enabled: true });
         let now = Instant::now();
-        engine.start(AnimationKind::Drawer, Duration::from_millis(100));
-        assert!(engine.is_active(now));
+        engine.start(AnimationKind::Drawer, Duration::from_millis(100), now);
+        assert!(engine.next_frame_timeout(now).is_some());
         let progress = engine.progress(AnimationKind::Drawer, now).unwrap();
         assert!((0.0..=1.0).contains(&progress));
         engine.tick(now + Duration::from_millis(101));
-        assert!(!engine.is_active(now + Duration::from_millis(101)));
+        assert_eq!(
+            engine.next_frame_timeout(now + Duration::from_millis(101)),
+            None
+        );
+    }
+
+    #[test]
+    fn frames_are_at_most_one_interval_apart() {
+        let mut engine = AnimationEngine::new(AnimationSettings { enabled: true });
+        let now = Instant::now();
+        assert_eq!(engine.next_frame_timeout(now), None);
+        engine.start(AnimationKind::Modal, Duration::from_millis(180), now);
+        assert_eq!(engine.next_frame_timeout(now), Some(FRAME_INTERVAL));
+        let near_end = now + Duration::from_millis(170);
+        assert_eq!(
+            engine.next_frame_timeout(near_end),
+            Some(Duration::from_millis(10))
+        );
+        assert_eq!(
+            engine.next_frame_timeout(now + Duration::from_millis(200)),
+            None
+        );
     }
 
     #[test]
@@ -150,7 +165,6 @@ mod tests {
         for step in 0..=10 {
             let value = step as f32 / 10.0;
             assert!((0.0..=1.0).contains(&ease_out_cubic(value)));
-            assert!((0.0..=1.0).contains(&ease_in_out_cubic(value)));
         }
     }
 }

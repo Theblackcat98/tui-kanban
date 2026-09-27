@@ -1,152 +1,168 @@
-use super::{centered_rect, render_clear, surface_style};
-use crate::animation::{AnimationKind, ease_out_cubic};
-use crate::app::App;
+//! The help overlay, generated from the command table.
+
+use super::{AnimationKind, centered_rect, fade_in, faint, fg, muted, overlay_block, progress};
+use crate::app::Model;
+use crate::clock::Clock;
+use crate::command::{COMMANDS, Group};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
-use std::time::Instant;
+use ratatui::style::Modifier;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Clear, Paragraph};
+use unicode_width::UnicodeWidthStr;
 
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, now: Instant) {
-    let full_width = 58.min(area.width.saturating_sub(2));
-    let full_height = 23.min(area.height.saturating_sub(2));
-    let progress = app
-        .animations
-        .progress(AnimationKind::Modal, now)
-        .map(ease_out_cubic)
-        .unwrap_or(1.0);
-    let width = ((full_width as f32 * progress).round() as u16).min(area.width);
-    let height = ((full_height as f32 * progress).round() as u16).min(area.height);
-    if width < 20 || height < 8 {
-        return;
-    }
-    let modal = centered_rect(area, width, height);
-    render_clear(frame, modal);
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(app.theme.accent))
-        .style(surface_style(app))
-        .title(Span::styled(
-            " Keyboard shortcuts ",
-            Style::default()
-                .fg(app.theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(modal);
-    frame.render_widget(block, modal);
-    let content = Text::from(vec![
-        Line::from(Span::styled(
-            "Navigation",
-            Style::default()
-                .fg(app.theme.accent_alt)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  v                toggle Board / All tasks"),
-        Line::from("  Tab              focus rail / cards"),
-        Line::from("  h / l or ← / →   select column"),
-        Line::from("  j / k or ↑ / ↓   select card"),
-        Line::from("  H / L            move selected card"),
-        Line::from("  PageUp / PageDn  move by five cards"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Tasks",
-            Style::default()
-                .fg(app.theme.accent_alt)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  n                new task"),
-        Line::from("  e                edit task"),
-        Line::from("  d                delete task"),
-        Line::from("  Enter            open details"),
-        Line::from("  /                search"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Details",
-            Style::default()
-                .fg(app.theme.accent_alt)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  PageUp / PageDn  scroll description"),
-        Line::from("  H / L            move task from drawer"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "General",
-            Style::default()
-                .fg(app.theme.accent_alt)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  ?                this help"),
-        Line::from("  Esc              close or cancel"),
-        Line::from("  q / Ctrl+C       quit"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press any key to return",
-            Style::default().fg(app.theme.muted),
-        )),
-    ]);
-    frame.render_widget(
-        Paragraph::new(content)
-            .style(Style::default().fg(app.theme.text).bg(app.theme.surface))
-            .wrap(Wrap { trim: true }),
-        inner,
-    );
+const COLUMN_GAP: u16 = 2;
+
+/// One help section: a group title and its (keys, label) rows, generated
+/// from the command table.
+struct Section {
+    title: &'static str,
+    rows: Vec<(String, &'static str)>,
 }
 
-pub(crate) fn render_confirm(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    app: &App,
-    task_id: uuid::Uuid,
-    now: Instant,
-) {
-    let full_width = 48.min(area.width.saturating_sub(2));
-    let full_height = 9.min(area.height.saturating_sub(2));
-    let progress = app
-        .animations
-        .progress(AnimationKind::Modal, now)
-        .map(ease_out_cubic)
-        .unwrap_or(1.0);
-    let width = ((full_width as f32 * progress).round() as u16).min(area.width);
-    let height = ((full_height as f32 * progress).round() as u16).min(area.height);
-    if width < 20 || height < 6 {
-        return;
+fn sections() -> Vec<Section> {
+    Group::ALL
+        .iter()
+        .map(|group| Section {
+            title: group.title(),
+            rows: COMMANDS
+                .iter()
+                .filter(|command| command.group == *group && !command.is_paired_into_another())
+                .map(|command| (command.keys_label(), command.help_label()))
+                .collect(),
+        })
+        .filter(|section| !section.rows.is_empty())
+        .collect()
+}
+
+fn section_height(section: &Section) -> usize {
+    section.rows.len() + 2
+}
+
+fn key_width(sections: &[Section]) -> usize {
+    sections
+        .iter()
+        .flat_map(|section| section.rows.iter())
+        .map(|(keys, _)| keys.width())
+        .max()
+        .unwrap_or(0)
+        + 2
+}
+
+fn column_width(sections: &[Section]) -> u16 {
+    let label_width = sections
+        .iter()
+        .flat_map(|section| section.rows.iter())
+        .map(|(_, label)| label.width())
+        .max()
+        .unwrap_or(0);
+    (2 + key_width(sections) + label_width) as u16
+}
+
+/// One column of help lines, sized to its own content.
+fn help_column(model: &Model, sections: &[Section]) -> (Vec<Line<'static>>, u16) {
+    let heading = fg(model.ui.theme.accent).add_modifier(Modifier::BOLD);
+    let keys_width = key_width(sections);
+    let mut lines = Vec::new();
+    for (index, section) in sections.iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::default());
+        }
+        lines.push(Line::from(Span::styled(section.title, heading)));
+        for (keys, label) in &section.rows {
+            let padding = " ".repeat(keys_width.saturating_sub(keys.width()));
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {keys}{padding}"), fg(model.ui.theme.text)),
+                Span::styled(*label, muted(model)),
+            ]));
+        }
     }
+    (lines, column_width(sections))
+}
+
+/// Where to split the sections into two columns so the taller column is
+/// as short as possible.
+fn balanced_split(sections: &[Section]) -> usize {
+    let height = |sections: &[Section]| sections.iter().map(section_height).sum::<usize>();
+    (1..sections.len())
+        .min_by_key(|&split| height(&sections[..split]).max(height(&sections[split..])))
+        .unwrap_or(sections.len())
+}
+
+/// The number of lines the help overlay can scroll through at most.
+pub(crate) fn line_count() -> usize {
+    sections().iter().map(section_height).sum::<usize>() - 1
+}
+
+pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, scroll: u16, clock: Clock) {
+    let sections = sections();
+    let available_width = area.width.saturating_sub(2);
+    let (left, right) = sections.split_at(balanced_split(&sections));
+    let two_columns = available_width >= column_width(left) + column_width(right) + COLUMN_GAP + 4;
+    let columns = if two_columns {
+        vec![help_column(model, left), help_column(model, right)]
+    } else {
+        vec![help_column(model, &sections)]
+    };
+    let content_height = columns
+        .iter()
+        .map(|(lines, _)| lines.len())
+        .max()
+        .unwrap_or(0) as u16;
+    let content_width = columns.iter().map(|(_, width)| width).sum::<u16>()
+        + COLUMN_GAP * (columns.len() as u16 - 1);
+    // Border, a blank line and the footer hint around the content.
+    let width = (content_width + 4).min(available_width);
+    let height = (content_height + 4).min(area.height.saturating_sub(2));
     let modal = centered_rect(area, width, height);
-    render_clear(frame, modal);
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(app.theme.error))
-        .style(surface_style(app))
-        .title(Span::styled(
-            " Delete task ",
-            Style::default()
-                .fg(app.theme.error)
-                .add_modifier(Modifier::BOLD),
-        ));
+    frame.render_widget(Clear, modal);
+    let block = overlay_block(model, "Keyboard shortcuts", model.ui.theme.border);
     let inner = block.inner(modal);
     frame.render_widget(block, modal);
-    let title = app
-        .board
-        .task(task_id)
-        .map(|task| task.title.as_str())
-        .unwrap_or("this task");
+    let inner = Rect::new(
+        inner.x.saturating_add(1),
+        inner.y,
+        inner.width.saturating_sub(2),
+        inner.height,
+    );
+    let body = Rect::new(
+        inner.x,
+        inner.y,
+        inner.width,
+        inner.height.saturating_sub(2),
+    );
+    let max_scroll = content_height.saturating_sub(body.height);
+    let scroll = scroll.min(max_scroll);
+    let mut x = body.x;
+    for (lines, width) in columns {
+        let width = width.min(body.right().saturating_sub(x));
+        frame.render_widget(
+            Paragraph::new(lines).scroll((scroll, 0)),
+            Rect::new(x, body.y, width, body.height),
+        );
+        x = x.saturating_add(width + COLUMN_GAP);
+    }
+
+    let hint = if scroll < max_scroll {
+        "↓ more   j/k scroll   Esc close"
+    } else if max_scroll > 0 {
+        "j/k scroll   Esc close"
+    } else {
+        "Press any key to return"
+    };
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(Span::styled(
-                format!(" Delete {title}?"),
-                Style::default()
-                    .fg(app.theme.text)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                " y confirm  •  n cancel",
-                Style::default().fg(app.theme.muted),
-            )),
-        ])
-        .style(Style::default().fg(app.theme.text).bg(app.theme.surface))
-        .wrap(Wrap { trim: true }),
-        inner,
+        Paragraph::new(Line::from(Span::styled(hint, faint(model)))),
+        Rect::new(
+            inner.x,
+            inner.y + inner.height.saturating_sub(1),
+            inner.width,
+            1,
+        ),
+    );
+    fade_in(
+        frame.buffer_mut(),
+        modal,
+        model.ui.theme.bg,
+        progress(model, AnimationKind::Modal, clock),
     );
 }

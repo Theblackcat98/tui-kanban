@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ Snapshot Board   Board · All tasks
+   ╭ Keyboard shortcuts ────────────────────────────────╮
+ Ba│ Editor, search and dialogs                         │
+ ▔▔│   Enter               search: apply                │▔▔
+   │   Tab / Shift+Tab     editor: switch field         │
+ ▌ │   Enter               editor: save                 │
+ ▌ │   Esc                 editor: cancel               │
+ ▌ │   y                   delete: confirm              │
+   │   n / Esc             delete: cancel               │
+ ▎ │                                                    │
+ ▎ │ General                                            │
+ ▎ │   j/k  ↓/↑            help: scroll down / up       │
+   │   Esc / q / ?         help: close                  │
+ ▎ │   ?                   this help                    │
+ ▎ │   q                   quit                         │
+   │   Ctrl+C              quit (anywhere)              │
+   │                                                    │
+   │ j/k scroll   Esc close                             │
+   ╰────────────────────────────────────────────────────╯
+ HELP   ● saved   j/k scroll   Esc close

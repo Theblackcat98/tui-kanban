@@ -1,1 +1,11 @@
 /target
+
+# Personal board data created by running the app in the repo.
+.tui-kanban.json
+
+# Local editor and tool configuration.
+.opencode/
+
+# Pending insta snapshots.
+*.snap.new
+*.pending-snap

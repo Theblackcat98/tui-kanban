@@ -1,0 +1,758 @@
+//! The app, structured as model → action → update → view:
+//!
+//! ```text
+//! Event (key, resize, tick)
+//!   → keymap(&Model, key) -> Action        (action.rs, via the command table)
+//!   → update(&mut Model, Action) -> Effects (update.rs, pure)
+//!   → the runtime runs the effects          (this file: save, quit)
+//!   → ui::render(&Model, Clock)             (pure)
+//! ```
+
+mod action;
+mod history;
+mod input;
+mod model;
+mod update;
+
+pub use action::{Action, Effect, keymap};
+pub use history::History;
+pub use input::TextInput;
+pub use model::{
+    EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Scroll, Search, Session,
+    Toast, ToastKind, Ui, ViewMode, VisibleTask,
+};
+pub use update::update;
+
+use anyhow::{Context as _, Result};
+use clap::Parser;
+use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{self, Event, KeyEvent};
+use std::collections::VecDeque;
+use std::env;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use crate::clock::Clock;
+use crate::storage::JsonStore;
+use crate::theme::{self, Theme, reduce_motion};
+use crate::ui;
+
+/// How often the idle event loop wakes to refresh relative times.
+const IDLE_REFRESH: Duration = Duration::from_secs(1);
+
+#[derive(Debug, Parser)]
+#[command(name = "tui-kanban", about = "A beautiful terminal Kanban board")]
+pub struct Cli {
+    #[arg(long, default_value = ".tui-kanban.json")]
+    pub board: PathBuf,
+    /// The colour theme: auto (Latte on light terminals, Mocha on dark
+    /// ones), latte, frappe, macchiato, mocha, ansi, the name of a theme in
+    /// ~/.config/tui-kanban/themes, or a path to a .toml theme file.
+    #[arg(long, value_name = "NAME")]
+    pub theme: Option<String>,
+    /// Turn off animations (a non-empty REDUCE_MOTION does the same).
+    #[arg(long)]
+    pub no_animation: bool,
+}
+
+/// The runtime: the model plus the store it is saved to. It turns events
+/// into actions, runs [`update`], and carries out the effects.
+pub struct App {
+    pub model: Model,
+    pub store: JsonStore,
+    quit: bool,
+}
+
+impl App {
+    pub fn new(store: JsonStore, theme: Theme, animations_enabled: bool) -> Result<Self> {
+        let board = store
+            .load_or_default()
+            .with_context(|| format!("could not load {}", store.path().display()))?;
+        Ok(Self {
+            model: Model::new(board, theme, animations_enabled),
+            store,
+            quit: false,
+        })
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent, clock: Clock) {
+        if let Some(action) = keymap(&self.model, key) {
+            self.dispatch(action, clock);
+        }
+    }
+
+    pub fn resize(&mut self, width: u16, height: u16) {
+        self.dispatch(Action::Resize(width, height), Clock::now());
+    }
+
+    pub fn tick(&mut self, clock: Clock) {
+        self.dispatch(Action::Tick, clock);
+    }
+
+    /// Runs an action through `update`, then carries out its effects. A
+    /// save's result is fed back in as another action.
+    pub fn dispatch(&mut self, action: Action, clock: Clock) {
+        let mut queue = VecDeque::from([action]);
+        while let Some(action) = queue.pop_front() {
+            for effect in update(&mut self.model, action, clock) {
+                match effect {
+                    Effect::Save => {
+                        let result = self
+                            .store
+                            .save(&self.model.board)
+                            .map_err(|error| error.to_string());
+                        queue.push_back(Action::SaveFinished(result));
+                    }
+                    Effect::Quit => self.quit = true,
+                }
+            }
+        }
+    }
+
+    pub fn should_quit(&self) -> bool {
+        self.quit
+    }
+
+    /// Before exiting, tries once more to save a board whose last save
+    /// failed, and reports the error if that fails too.
+    pub fn finish(&mut self) -> Result<()> {
+        if let SaveState::Failed(_) = self.model.session.save_state {
+            self.store.save(&self.model.board).with_context(|| {
+                format!(
+                    "your last changes could not be saved to {}",
+                    self.store.path().display()
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    /// How long the event loop may wait for input before it has to redraw:
+    /// the next animation frame, the moment a toast expires, or an idle
+    /// refresh so relative times such as "5m" stay current.
+    pub fn next_timeout(&self, now: Instant) -> Duration {
+        let mut timeout = IDLE_REFRESH;
+        if let Some(frame) = self.model.ui.animations.next_frame_timeout(now) {
+            timeout = timeout.min(frame);
+        }
+        if let Some(expires_at) = self
+            .model
+            .session
+            .toast
+            .as_ref()
+            .and_then(|toast| toast.expires_at)
+        {
+            timeout = timeout.min(expires_at.saturating_duration_since(now));
+        }
+        timeout
+    }
+}
+
+pub fn run() -> Result<()> {
+    let cli = Cli::parse();
+    let store = JsonStore::new(cli.board);
+    let animations = !cli.no_animation && !reduce_motion(env::var_os("REDUCE_MOTION").as_deref());
+    let theme = theme::resolve(
+        cli.theme.as_deref(),
+        &theme::Environment::from_env(),
+        theme::detect_light_background,
+    )?;
+    let mut app = App::new(store, theme, animations)?;
+    let mut terminal = ratatui::try_init().context("could not initialize terminal")?;
+    if let Ok(size) = terminal.size() {
+        app.resize(size.width, size.height);
+    }
+    let result = run_loop(&mut terminal, &mut app);
+    let restore_result = ratatui::try_restore().context("could not restore terminal");
+    result.and(restore_result).and(app.finish())
+}
+
+fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+    let mut needs_redraw = true;
+    loop {
+        // Tick on every iteration, not only when polling times out, so
+        // toasts expire and animations finish while keys keep arriving.
+        let clock = Clock::now();
+        app.tick(clock);
+        if needs_redraw {
+            terminal.draw(|frame| ui::render(frame, &app.model, clock))?;
+            needs_redraw = false;
+        }
+        if app.should_quit() {
+            return Ok(());
+        }
+
+        let timeout = app.next_timeout(clock.instant);
+        if event::poll(timeout)? {
+            match event::read()? {
+                Event::Key(key) => {
+                    app.handle_key(key, Clock::now());
+                    needs_redraw = true;
+                }
+                Event::Resize(width, height) => {
+                    app.resize(width, height);
+                    needs_redraw = true;
+                }
+                _ => {}
+            }
+        } else {
+            // An animation frame is due, a toast expired, or it is time
+            // for the idle refresh.
+            needs_redraw = true;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::animation::{AnimationKind, FRAME_INTERVAL};
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+    use tempfile::TempDir;
+    use uuid::Uuid;
+
+    fn test_app() -> (TempDir, App) {
+        test_app_with(false)
+    }
+
+    fn test_app_with(animations: bool) -> (TempDir, App) {
+        let directory = tempfile::tempdir().unwrap();
+        let store = JsonStore::new(directory.path().join("board.json"));
+        let mut app = App::new(store, Theme::mocha(), animations).unwrap();
+        app.resize(100, 30);
+        (directory, app)
+    }
+
+    fn clock() -> Clock {
+        Clock::fixed(0)
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn press(app: &mut App, codes: &[KeyCode]) {
+        for code in codes {
+            app.handle_key(key(*code), clock());
+        }
+    }
+
+    fn type_text(app: &mut App, text: &str) {
+        for character in text.chars() {
+            app.handle_key(key(KeyCode::Char(character)), clock());
+        }
+    }
+
+    /// Adds a task directly to the board, as if loaded from disk.
+    fn add(app: &mut App, column: usize, title: &str) -> Uuid {
+        let id = app.model.board.add_task(column, title, "", 0).unwrap();
+        app.model.reconcile_selection();
+        id
+    }
+
+    fn top_screen(app: &App) -> Option<&Screen> {
+        app.model.ui.screens.last()
+    }
+
+    #[test]
+    fn idle_loop_waits_for_the_refresh_interval() {
+        let (_directory, app) = test_app();
+        assert_eq!(app.next_timeout(Instant::now()), IDLE_REFRESH);
+    }
+
+    #[test]
+    fn animations_run_at_frame_rate() {
+        let (_directory, mut app) = test_app_with(true);
+        let clock = clock();
+        app.handle_key(key(KeyCode::Char('?')), clock);
+        assert_eq!(app.next_timeout(clock.instant), FRAME_INTERVAL);
+    }
+
+    #[test]
+    fn edit_and_new_task_modals_both_animate() {
+        let (_directory, mut app) = test_app_with(true);
+        add(&mut app, 0, "Edit me");
+        for opener in ['n', 'e'] {
+            app.model.ui.screens.clear();
+            app.model.ui.animations.finish(AnimationKind::Modal);
+            app.handle_key(key(KeyCode::Char(opener)), clock());
+            assert!(
+                matches!(top_screen(&app), Some(Screen::Editor(_))),
+                "{opener}"
+            );
+            assert!(
+                app.model
+                    .ui
+                    .animations
+                    .progress(AnimationKind::Modal, clock().instant)
+                    .is_some(),
+                "{opener} should start the modal animation the editor reads"
+            );
+        }
+    }
+
+    #[test]
+    fn toasts_wake_the_loop_when_they_expire() {
+        let (_directory, mut app) = test_app();
+        let clock = clock();
+        app.model.session.toast = Some(Toast {
+            message: "hello".to_owned(),
+            kind: ToastKind::Info,
+            expires_at: Some(clock.instant + Duration::from_millis(400)),
+        });
+        assert_eq!(
+            app.next_timeout(clock.instant + Duration::from_millis(100)),
+            Duration::from_millis(300)
+        );
+        app.tick(clock.advance(Duration::from_millis(400)));
+        assert!(app.model.session.toast.is_none());
+    }
+
+    #[test]
+    fn editor_creates_and_persists_a_task() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Ship it");
+        press(&mut app, &[KeyCode::Tab]);
+        type_text(&mut app, "Make it beautiful");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.task_count(), 1);
+        assert_eq!(app.model.board.columns[0].tasks[0].title, "Ship it");
+        assert!(app.model.ui.screens.is_empty());
+        assert_eq!(app.store.load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn empty_title_keeps_the_editor_open() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('n'), KeyCode::Enter]);
+        match top_screen(&app) {
+            Some(Screen::Editor(editor)) => {
+                assert_eq!(editor.error.as_deref(), Some("Title cannot be empty"));
+            }
+            other => panic!("expected the editor, got {other:?}"),
+        }
+        assert_eq!(app.model.board.task_count(), 0);
+    }
+
+    #[test]
+    fn search_escape_clears_the_query() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Design cards");
+        add(&mut app, 0, "Write tests");
+        press(&mut app, &[KeyCode::Char('/')]);
+        type_text(&mut app, "design");
+        assert_eq!(app.model.visible_task_indices(0), vec![0]);
+        press(&mut app, &[KeyCode::Esc]);
+        assert_eq!(app.model.ui.search.query, "");
+        assert_eq!(app.model.visible_task_indices(0), vec![0, 1]);
+        assert!(!app.model.ui.search.is_typing());
+    }
+
+    #[test]
+    fn moving_a_task_changes_column_and_selection() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Move me");
+        press(&mut app, &[KeyCode::Char('L')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        assert_eq!(app.model.ui.active_column, 1);
+        assert_eq!(app.model.selected_task_id(), Some(id));
+    }
+
+    #[test]
+    fn delete_requires_confirmation() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Delete me");
+        press(&mut app, &[KeyCode::Char('d')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::ConfirmDelete { .. })
+        ));
+        press(&mut app, &[KeyCode::Esc]);
+        assert_eq!(app.model.board.task_count(), 1);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('y')]);
+        assert_eq!(app.model.board.task_count(), 0);
+    }
+
+    #[test]
+    fn toggles_all_tasks_and_rail_focus() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('v')]);
+        assert_eq!(app.model.ui.view, ViewMode::AllTasks);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+        press(&mut app, &[KeyCode::Tab]);
+        assert_eq!(app.model.ui.focus, FocusRegion::Rail);
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+    }
+
+    #[test]
+    fn all_tasks_search_selects_the_first_match_anywhere() {
+        // #4: a search that filters out the selected column used to clear
+        // the selection, and Down then skipped the first match.
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "beta");
+        let first = add(&mut app, 1, "alpha one");
+        let second = add(&mut app, 1, "alpha two");
+        press(&mut app, &[KeyCode::Char('v'), KeyCode::Char('/')]);
+        type_text(&mut app, "alpha");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        assert_eq!(app.model.ui.active_column, 1);
+        press(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(second));
+    }
+
+    #[test]
+    fn down_with_nothing_selected_starts_at_the_first_task() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "First");
+        add(&mut app, 0, "Second");
+        let last = add(&mut app, 0, "Last");
+        app.model.ui.selected = None;
+        press(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        app.model.ui.selected = None;
+        press(&mut app, &[KeyCode::Up]);
+        assert_eq!(app.model.selected_task_id(), Some(last));
+    }
+
+    #[test]
+    fn selection_follows_the_task_not_its_position() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "First");
+        let second = add(&mut app, 0, "Second");
+        press(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        // Moving another task out from above it doesn't change the selection.
+        app.model.board.move_task(first, 2, None, 0).unwrap();
+        app.model.reconcile_selection();
+        assert_eq!(app.model.selected_task_id(), Some(second));
+    }
+
+    #[test]
+    fn deleting_selects_the_next_task() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "First");
+        add(&mut app, 0, "Second");
+        let third = add(&mut app, 0, "Third");
+        press(
+            &mut app,
+            &[KeyCode::Down, KeyCode::Char('d'), KeyCode::Char('y')],
+        );
+        assert_eq!(app.model.selected_task_id(), Some(third));
+    }
+
+    #[test]
+    fn tab_does_not_focus_a_hidden_rail() {
+        // #5: below the rail's breakpoint, Tab used to move focus to it.
+        let (_directory, mut app) = test_app();
+        app.resize(60, 20);
+        press(&mut app, &[KeyCode::Tab]);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+        app.resize(100, 30);
+        press(&mut app, &[KeyCode::Tab]);
+        assert_eq!(app.model.ui.focus, FocusRegion::Rail);
+        // Shrinking the terminal hides the rail, so focus leaves it.
+        app.resize(60, 20);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+    }
+
+    #[test]
+    fn all_tasks_navigation_keeps_task_identity() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "First");
+        let second = add(&mut app, 1, "Second");
+        press(&mut app, &[KeyCode::Char('v'), KeyCode::Down]);
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        assert_eq!(app.model.ui.active_column, 1);
+    }
+
+    #[test]
+    fn escape_from_a_dialog_returns_to_the_detail_drawer() {
+        // #7: dialogs opened from the drawer used to return to the board.
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Inspect me");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::Char('d'), KeyCode::Esc],
+        );
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { task, .. }) if *task == id));
+        press(&mut app, &[KeyCode::Char('e'), KeyCode::Esc]);
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { .. })));
+        press(&mut app, &[KeyCode::Char('?'), KeyCode::Esc]);
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { .. })));
+        press(&mut app, &[KeyCode::Esc]);
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn saving_from_the_drawer_returns_to_it() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Old title");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::Char('e'), KeyCode::End],
+        );
+        type_text(&mut app, "!");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.task(id).unwrap().title, "Old title!");
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { .. })));
+    }
+
+    #[test]
+    fn deleting_from_the_drawer_closes_it() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Doomed");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::Char('d'), KeyCode::Char('y')],
+        );
+        assert_eq!(app.model.board.task_count(), 0);
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn tiny_terminals_only_accept_quit() {
+        // #16: modals too small to draw used to still accept keys, so "d"
+        // then "y" deleted a task without showing anything.
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Keep me");
+        app.resize(30, 8);
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('y')]);
+        assert_eq!(app.model.board.task_count(), 1);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(app.should_quit());
+    }
+
+    #[test]
+    fn a_failed_save_keeps_the_change_and_reports_it() {
+        let directory = tempfile::tempdir().unwrap();
+        // A directory where the board file should be makes every save fail.
+        let path = directory.path().join("board.json");
+        std::fs::create_dir(&path).unwrap();
+        let store = JsonStore::new(&path);
+        let mut app = App {
+            model: Model::new(Default::default(), Theme::mocha(), false),
+            store,
+            quit: false,
+        };
+        app.resize(100, 30);
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Unsaved");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.task_count(), 1);
+        assert!(matches!(app.model.session.save_state, SaveState::Failed(_)));
+        assert_eq!(
+            app.model.session.toast.as_ref().map(|toast| toast.kind),
+            Some(ToastKind::Error)
+        );
+        assert!(app.finish().is_err());
+        // The error stays up until the next key press.
+        app.tick(clock().advance(Duration::from_secs(60)));
+        assert!(app.model.session.toast.is_some());
+        press(&mut app, &[KeyCode::Char('j')]);
+        assert!(app.model.session.toast.is_none());
+    }
+
+    /// Adds `count` tasks to the first column, each with a description.
+    fn add_many(app: &mut App, count: usize) -> Vec<Uuid> {
+        (0..count)
+            .map(|index| {
+                let title = format!("Task {index}");
+                let id = app.model.board.add_task(0, &title, "details", 0).unwrap();
+                app.model.reconcile_selection();
+                id
+            })
+            .collect()
+    }
+
+    #[test]
+    fn lanes_scroll_to_the_selection_and_remember_it() {
+        let (_directory, mut app) = test_app();
+        app.resize(100, 20);
+        let tasks = add_many(&mut app, 10);
+        assert_eq!(app.model.ui.scroll.lane(0), 0);
+        press(&mut app, &[KeyCode::End]);
+        assert_eq!(app.model.selected_task_id(), Some(tasks[9]));
+        let scrolled = app.model.ui.scroll.lane(0);
+        assert!(scrolled > 0);
+        // #31: moving focus to the rail and back keeps the scroll position.
+        press(&mut app, &[KeyCode::Tab]);
+        assert_eq!(app.model.ui.scroll.lane(0), scrolled);
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('l'), KeyCode::Char('h')],
+        );
+        assert_eq!(app.model.ui.scroll.lane(0), scrolled);
+        // Coming back to the lane selects its first card on screen.
+        assert_eq!(app.model.selected_task_id(), Some(tasks[scrolled]));
+        // Moving up only scrolls once the selection reaches the top.
+        press(&mut app, &[KeyCode::Up]);
+        assert_eq!(app.model.ui.scroll.lane(0), scrolled - 1);
+    }
+
+    #[test]
+    fn lanes_scroll_sideways_to_the_active_column() {
+        // #25: with many columns, lanes keep a minimum width and scroll.
+        let (_directory, mut app) = test_app();
+        app.model.board.columns = (0..8)
+            .map(|index| crate::domain::Column::new(format!("c{index}"), format!("Stage {index}")))
+            .collect();
+        app.resize(100, 30);
+        assert_eq!(app.model.ui.scroll.first_lane, 0);
+        press(&mut app, &[KeyCode::Char('l'); 3]);
+        assert_eq!(app.model.ui.active_column, 3);
+        // 76 cells fit three lanes of 24 or wider, so the view follows.
+        assert_eq!(app.model.ui.scroll.first_lane, 1);
+        press(&mut app, &[KeyCode::Char('h'); 2]);
+        assert_eq!(app.model.ui.scroll.first_lane, 1);
+        press(&mut app, &[KeyCode::Char('h')]);
+        assert_eq!(app.model.ui.scroll.first_lane, 0);
+    }
+
+    #[test]
+    fn detail_scroll_stops_at_the_end_of_the_text() {
+        // #8: PgDn used to scroll past the description into blank space.
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Short");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::PageDown, KeyCode::Char('j')],
+        );
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Detail { scroll: 0, .. })
+        ));
+
+        let long: String = (0..60).map(|line| format!("line {line}\n")).collect();
+        app.model
+            .board
+            .update_task(id, "Long".to_owned(), long, 0)
+            .unwrap();
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Char('j')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Detail { scroll: 2, .. })
+        ));
+        press(&mut app, &[KeyCode::PageDown; 20]);
+        let Some(Screen::Detail { scroll, .. }) = top_screen(&app) else {
+            panic!("expected the detail drawer");
+        };
+        // 60 lines in a drawer of 30 rows: it stops with the last line at
+        // the bottom.
+        assert!(*scroll > 30 && *scroll < 60, "{scroll}");
+        let end = *scroll;
+        press(&mut app, &[KeyCode::Char('k')]);
+        assert!(
+            matches!(top_screen(&app), Some(Screen::Detail { scroll, .. }) if *scroll == end - 1)
+        );
+    }
+
+    fn toast_message(app: &App) -> &str {
+        app.model
+            .session
+            .toast
+            .as_ref()
+            .map_or("", |toast| toast.message.as_str())
+    }
+
+    #[test]
+    fn undo_restores_a_deleted_task_and_its_selection() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "First");
+        let doomed = add(&mut app, 0, "Doomed");
+        press(
+            &mut app,
+            &[KeyCode::Down, KeyCode::Char('d'), KeyCode::Char('y')],
+        );
+        assert_eq!(app.model.board.task_count(), 1);
+        assert_eq!(toast_message(&app), "Task deleted · u to undo");
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task_count(), 2);
+        assert_eq!(app.model.selected_task_id(), Some(doomed));
+        assert_eq!(toast_message(&app), "Undid: delete 'Doomed'");
+        // The undo was saved, too.
+        assert_eq!(app.store.load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn undo_and_redo_a_move() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Ship it");
+        press(&mut app, &[KeyCode::Char('L'), KeyCode::Char('L')]);
+        assert_eq!(app.model.board.task_location(id), Some((2, 0)));
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        assert_eq!(toast_message(&app), "Undid: move 'Ship it' → Done");
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert_eq!(app.model.board.task_location(id), Some((0, 0)));
+        press(&mut app, &[KeyCode::Char('U')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        assert_eq!(toast_message(&app), "Redid: move 'Ship it' → In Progress");
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert_eq!(app.model.board.task_location(id), Some((2, 0)));
+        assert_eq!(app.model.selected_task_id(), Some(id));
+    }
+
+    #[test]
+    fn undo_an_edit_and_an_add() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Draft");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::Char('e'), KeyCode::End],
+        );
+        type_text(&mut app, " v2");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[0].tasks[0].title, "Draft v2");
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.columns[0].tasks[0].title, "Draft");
+        assert_eq!(toast_message(&app), "Undid: edit 'Draft v2'");
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task_count(), 0);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(toast_message(&app), "Nothing to undo");
+    }
+
+    #[test]
+    fn update_is_pure_and_returns_effects() {
+        let mut model = Model::new(Default::default(), Theme::mocha(), false);
+        model.ui.viewport = (100, 30);
+        let effects = update(
+            &mut model,
+            Action::Command(crate::command::CommandId::NewTask),
+            clock(),
+        );
+        assert!(effects.is_empty());
+        for character in "Pure".chars() {
+            update(
+                &mut model,
+                Action::Edit(key(KeyCode::Char(character))),
+                clock(),
+            );
+        }
+        let effects = update(
+            &mut model,
+            Action::Command(crate::command::CommandId::SaveTask),
+            clock(),
+        );
+        assert_eq!(effects, vec![Effect::Save]);
+        assert_eq!(model.board.columns[0].tasks[0].title, "Pure");
+        let effects = update(
+            &mut model,
+            Action::Command(crate::command::CommandId::Quit),
+            clock(),
+        );
+        assert_eq!(effects, vec![Effect::Quit]);
+    }
+}

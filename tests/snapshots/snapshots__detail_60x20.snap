@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ Snapshot Board   Board · All tasks
+▎
+▎  Write the README
+▎
+▎  Backlog · #00000000
+▎  updated 1d ago · created Aug 27
+▎
+▎  Cover install, usage, keys and the file format.
+▎
+▎
+▎
+▎
+▎
+▎
+▎
+▎
+▎
+▎
+▎
+ DETAIL   ● saved   e edit   H/L move   d delete

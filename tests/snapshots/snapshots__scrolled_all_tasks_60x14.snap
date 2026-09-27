@@ -1,0 +1,18 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 14)"
+---
+ Snapshot Board   Board · All tasks
+ ↑ 3 more
+ ▎ Task 4
+ ▎ With a description
+ ▎ ◷ 4h ago
+
+ ▎ Task 5
+ ▎ ◷ 5h ago
+
+ ▌ Task 6
+ ▌ With a description
+ ▌ ◷ 6h ago
+ ↓ 3 more
+ ALL TASKS   ● saved   j/k card   h/l column   v view

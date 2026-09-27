@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -13,8 +12,7 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn new(title: impl Into<String>, description: impl Into<String>) -> Self {
-        let now = now_millis();
+    pub fn new(title: impl Into<String>, description: impl Into<String>, now: i64) -> Self {
         Self {
             id: Uuid::new_v4(),
             title: title.into(),
@@ -24,14 +22,14 @@ impl Task {
         }
     }
 
-    pub fn update(&mut self, title: impl Into<String>, description: impl Into<String>) {
+    pub fn update(&mut self, title: impl Into<String>, description: impl Into<String>, now: i64) {
         self.title = title.into();
         self.description = description.into();
-        self.updated_at = now_millis();
+        self.updated_at = now;
     }
 
-    pub fn touch(&mut self) {
-        self.updated_at = now_millis();
+    pub fn touch(&mut self, now: i64) {
+        self.updated_at = now;
     }
 
     pub fn matches(&self, query: &str) -> bool {
@@ -42,40 +40,27 @@ impl Task {
     }
 }
 
-pub fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(i64::MAX)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn task_updates_timestamp_and_content() {
-        let mut task = Task::new("Initial", "Description");
-        let original = task.updated_at;
-        task.update("Changed", "New description");
+        let mut task = Task::new("Initial", "Description", 1_000);
+        assert_eq!(task.created_at, 1_000);
+        task.update("Changed", "New description", 2_000);
         assert_eq!(task.title, "Changed");
         assert_eq!(task.description, "New description");
-        assert!(task.updated_at >= original);
+        assert_eq!(task.created_at, 1_000);
+        assert_eq!(task.updated_at, 2_000);
     }
 
     #[test]
     fn matching_is_case_insensitive() {
-        let task = Task::new("Build UI", "Catppuccin colors");
+        let task = Task::new("Build UI", "Catppuccin colors", 0);
         assert!(task.matches("catppuccin"));
         assert!(task.matches("UI"));
         assert!(!task.matches("database"));
         assert!(task.matches(""));
-    }
-
-    #[test]
-    fn timestamp_is_non_negative() {
-        assert!(now_millis() >= 0);
     }
 }

@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ Snapshot Board   Board · All tasks
+
+  Columns              Backlog  3                In Progress  2            Done  2
+ ╭ Keyboard shortcuts ────────────────────────────────────────────────────────────────────────────╮
+ │ Navigation                                          Details                                    │
+ │   h/l  ←/→            previous / next column          PgUp/PgDn        scroll up / down a page │
+ │   j/k  ↓/↑            next / previous card            j/k  ↓/↑         scroll down / up a line │
+ │   PgUp/PgDn           up / down five cards            Esc              close details           │
+ │   Home/End            first / last card                                                        │
+ │   j/k  ↓/↑  l/h  →/←  rail: next / previous column  Editor, search and dialogs                 │
+ │   Home/End            rail: first / last column       Enter            search: apply           │
+ │   Enter               rail: focus cards               Tab / Shift+Tab  editor: switch field    │
+ │   Tab / Shift+Tab     focus rail / cards              Enter            editor: save            │
+ │   v                   Board / All tasks               Esc              editor: cancel          │
+ │                                                       y                delete: confirm         │
+ │ Tasks                                                 n / Esc          delete: cancel          │
+ │   Enter               open details                                                             │
+ │   n                   new task                      General                                    │
+ │   e                   edit task                       j/k  ↓/↑         help: scroll down / up  │
+ │   d                   delete task                     Esc / q / ?      help: close             │
+ │   H/L                 move task left / right          ?                this help               │
+ │   u/U  Ctrl+Z/Ctrl+R  undo / redo                     q                quit                    │
+ │   /                   search                          Ctrl+C           quit (anywhere)         │
+ │   Esc                 clear search                                                             │
+ │                                                                                                │
+ │ Press any key to return                                                                        │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+ HELP   ● saved   j/k scroll   Esc close

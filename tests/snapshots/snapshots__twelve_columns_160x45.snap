@@ -1,0 +1,49 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(160, 45)"
+---
+ Snapshot Board   Board · All tasks
+                                                                                                                                                       7 more ›
+  Columns              Stage 1  1                  Stage 2  1                  Stage 3  1                  Stage 4  1                 Stage 5  1
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Stage 1         1
+   Stage 2         1   ▌ Task in stage 1           ▎ Task in stage 2           ▎ Task in stage 3           ▎ Task in stage 4          ▎ Task in stage 5
+   Stage 3         1   ▌ ◷ 1h ago                  ▎ ◷ 1h ago                  ▎ ◷ 1h ago                  ▎ ◷ 1h ago                 ▎ ◷ 1h ago
+   Stage 4         1
+   Stage 5         1
+   Stage 6         1
+   Stage 7         1
+   Stage 8         1
+   Stage 9         1
+   Stage 10        1
+   Stage 11        1
+   Stage 12        1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n new   Enter open   e edit   H/L move   d delete   / search   ? help

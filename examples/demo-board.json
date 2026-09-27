@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "name": "Demo Board",
+  "columns": [
+    {
+      "id": "backlog",
+      "name": "Backlog",
+      "color": "sapphire",
+      "tasks": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "title": "Write the README",
+          "description": "Cover install, usage, keys and the board file format.",
+          "created_at": 1787820000000,
+          "updated_at": 1787906400000
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "title": "Record a demo with vhs",
+          "description": "Commit the .tape file so the GIF can be re-recorded.",
+          "created_at": 1787733600000,
+          "updated_at": 1787820000000
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "title": "Package release binaries",
+          "description": "cargo-dist for Linux, macOS and Windows.",
+          "created_at": 1787136000000,
+          "updated_at": 1787222400000
+        }
+      ]
+    },
+    {
+      "id": "in-progress",
+      "name": "In Progress",
+      "color": "peach",
+      "tasks": [
+        {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "title": "Calmer card style",
+          "description": "Tiles with an accent bar instead of nested boxes.",
+          "created_at": 1787912880000,
+          "updated_at": 1787999280000
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000005",
+          "title": "Command table",
+          "description": "Every keybinding defined once; help and footer generated from it.",
+          "created_at": 1787907900000,
+          "updated_at": 1787994300000
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "name": "Done",
+      "color": "green",
+      "tasks": [
+        {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "title": "Set up CI",
+          "description": "fmt, clippy and tests on stable and 1.88.",
+          "created_at": 1787895600000,
+          "updated_at": 1787982000000
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000007",
+          "title": "Snapshot tests",
+          "description": "",
+          "created_at": 1787805600000,
+          "updated_at": 1787892000000
+        }
+      ]
+    }
+  ]
+}

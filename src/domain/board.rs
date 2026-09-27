@@ -17,6 +17,10 @@ pub struct Board {
 pub struct Column {
     pub id: String,
     pub name: String,
+    /// The column's accent: a palette name such as `"mauve"`, or
+    /// `"#rrggbb"`. Without one, a colour is chosen from the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub tasks: Vec<Task>,
 }
 
@@ -60,9 +64,9 @@ impl Default for Board {
             schema_version: SCHEMA_VERSION,
             name: "Project Board".to_owned(),
             columns: vec![
-                Column::new("backlog", "Backlog"),
-                Column::new("in-progress", "In Progress"),
-                Column::new("done", "Done"),
+                Column::new("backlog", "Backlog").with_color("sapphire"),
+                Column::new("in-progress", "In Progress").with_color("peach"),
+                Column::new("done", "Done").with_color("green"),
             ],
         }
     }
@@ -73,8 +77,14 @@ impl Column {
         Self {
             id: id.into(),
             name: name.into(),
+            color: None,
             tasks: Vec::new(),
         }
+    }
+
+    pub fn with_color(mut self, color: impl Into<String>) -> Self {
+        self.color = Some(color.into());
+        self
     }
 }
 
@@ -126,10 +136,6 @@ impl Board {
         Ok(())
     }
 
-    pub fn column_index(&self, id: &str) -> Option<usize> {
-        self.columns.iter().position(|column| column.id == id)
-    }
-
     pub fn task_location(&self, id: Uuid) -> Option<(usize, usize)> {
         self.columns
             .iter()
@@ -148,17 +154,12 @@ impl Board {
             .and_then(|(column_index, task_index)| self.columns[column_index].tasks.get(task_index))
     }
 
-    pub fn column(&self, index: usize) -> Result<&Column, BoardError> {
-        self.columns
-            .get(index)
-            .ok_or(BoardError::InvalidColumn(index))
-    }
-
     pub fn add_task(
         &mut self,
         column_index: usize,
         title: impl Into<String>,
         description: impl Into<String>,
+        now: i64,
     ) -> Result<Uuid, BoardError> {
         let title = title.into();
         if title.trim().is_empty() {
@@ -168,7 +169,7 @@ impl Board {
             .columns
             .get_mut(column_index)
             .ok_or(BoardError::InvalidColumn(column_index))?;
-        let task = Task::new(title.trim().to_owned(), description.into());
+        let task = Task::new(title.trim().to_owned(), description.into(), now);
         let id = task.id;
         column.tasks.push(task);
         Ok(id)
@@ -179,6 +180,7 @@ impl Board {
         id: Uuid,
         title: impl Into<String>,
         description: impl Into<String>,
+        now: i64,
     ) -> Result<(), BoardError> {
         let title = title.into();
         if title.trim().is_empty() {
@@ -186,8 +188,11 @@ impl Board {
         }
         let (column_index, task_index) =
             self.task_location(id).ok_or(BoardError::TaskNotFound(id))?;
-        self.columns[column_index].tasks[task_index]
-            .update(title.trim().to_owned(), description.into());
+        self.columns[column_index].tasks[task_index].update(
+            title.trim().to_owned(),
+            description.into(),
+            now,
+        );
         Ok(())
     }
 
@@ -202,6 +207,7 @@ impl Board {
         id: Uuid,
         to_column: usize,
         to_index: Option<usize>,
+        now: i64,
     ) -> Result<MoveOutcome, BoardError> {
         let (from_column, from_index) =
             self.task_location(id).ok_or(BoardError::TaskNotFound(id))?;
@@ -219,10 +225,8 @@ impl Board {
             requested_index
         }
         .min(max_index);
-        self.columns[to_column]
-            .tasks
-            .insert(insertion_index, task.clone());
-        self.columns[to_column].tasks[insertion_index].touch();
+        self.columns[to_column].tasks.insert(insertion_index, task);
+        self.columns[to_column].tasks[insertion_index].touch(now);
 
         Ok(MoveOutcome {
             task_id: id,
@@ -231,14 +235,6 @@ impl Board {
             to_column,
             to_index: insertion_index,
         })
-    }
-
-    pub fn search(&self, query: &str) -> usize {
-        self.columns
-            .iter()
-            .flat_map(|column| column.tasks.iter())
-            .filter(|task| task.matches(query))
-            .count()
     }
 
     pub fn task_count(&self) -> usize {
@@ -260,20 +256,34 @@ mod tests {
     }
 
     #[test]
+    fn column_colour_is_optional_in_the_file() {
+        // Files without colours still load, and columns without one are
+        // saved without the field.
+        let column: Column =
+            serde_json::from_str(r#"{"id": "a", "name": "A", "tasks": []}"#).unwrap();
+        assert_eq!(column.color, None);
+        assert!(!serde_json::to_string(&column).unwrap().contains("color"));
+        let column = Column::new("a", "A").with_color("teal");
+        let json = serde_json::to_string(&column).unwrap();
+        assert!(json.contains(r#""color":"teal""#));
+        assert_eq!(serde_json::from_str::<Column>(&json).unwrap(), column);
+    }
+
+    #[test]
     fn task_lifecycle_updates_board() {
         let mut board = Board::default();
         let id = board
-            .add_task(0, "Write parser", "Keep the format readable")
+            .add_task(0, "Write parser", "Keep the format readable", 0)
             .unwrap();
         assert_eq!(board.task_count(), 1);
         assert_eq!(board.task(id).unwrap().title, "Write parser");
 
         board
-            .update_task(id, "Write UI", "Ship the first screen")
+            .update_task(id, "Write UI", "Ship the first screen", 0)
             .unwrap();
         assert_eq!(board.task(id).unwrap().title, "Write UI");
 
-        let outcome = board.move_task(id, 1, None).unwrap();
+        let outcome = board.move_task(id, 1, None, 0).unwrap();
         assert_eq!(outcome.from_column, 0);
         assert_eq!(outcome.to_column, 1);
         assert_eq!(board.task(id).unwrap().title, "Write UI");
@@ -285,30 +295,20 @@ mod tests {
     #[test]
     fn same_column_move_uses_final_index() {
         let mut board = Board::default();
-        let first = board.add_task(0, "First", "").unwrap();
-        board.add_task(0, "Second", "").unwrap();
-        board.add_task(0, "Third", "").unwrap();
-        board.move_task(first, 0, Some(2)).unwrap();
+        let first = board.add_task(0, "First", "", 0).unwrap();
+        board.add_task(0, "Second", "", 0).unwrap();
+        board.add_task(0, "Third", "", 0).unwrap();
+        board.move_task(first, 0, Some(2), 0).unwrap();
         assert_eq!(board.columns[0].tasks[1].id, first);
     }
 
     #[test]
     fn invalid_tasks_are_rejected() {
         let mut board = Board::default();
-        assert_eq!(board.add_task(0, "  ", ""), Err(BoardError::EmptyTitle));
+        assert_eq!(board.add_task(0, "  ", "", 0), Err(BoardError::EmptyTitle));
         assert_eq!(
-            board.add_task(9, "Task", ""),
+            board.add_task(9, "Task", "", 0),
             Err(BoardError::InvalidColumn(9))
         );
-    }
-
-    #[test]
-    fn search_matches_title_and_description() {
-        let mut board = Board::default();
-        board.add_task(0, "Design cards", "Use Catppuccin").unwrap();
-        board.add_task(0, "Write tests", "Cover storage").unwrap();
-        assert_eq!(board.search("catppuccin"), 1);
-        assert_eq!(board.search("storage"), 1);
-        assert_eq!(board.search(""), 2);
     }
 }

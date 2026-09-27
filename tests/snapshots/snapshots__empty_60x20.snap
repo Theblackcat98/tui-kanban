@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ Project Board   Board · All tasks
+
+ Backlog 0 · In Progress 0 · Done 0
+ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+ No tasks yet
+ n to add one
+ ? for all keys
+
+
+
+
+
+
+
+
+
+
+
+ BOARD   ● saved   j/k card   h/l column   v view   n new

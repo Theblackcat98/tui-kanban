@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ Snapshot Board   Board · All tasks
+
+ ‹ Stage 5 1 · Stage 6 1 · Stage 7 1 · Stage 8 1 ›
+ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+ ▌ Task in stage 6
+ ▌ ◷ 1h ago
+
+
+
+
+
+
+
+
+
+
+
+
+ BOARD   ● saved   j/k card   h/l column   v view   n new
