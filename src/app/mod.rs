@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 
 use crate::clock::Clock;
 use crate::storage::JsonStore;
-use crate::theme::{Theme, reduce_motion};
+use crate::theme::{self, Theme, reduce_motion};
 use crate::ui;
 
 /// How often the idle event loop wakes to refresh relative times.
@@ -45,6 +45,11 @@ const IDLE_REFRESH: Duration = Duration::from_secs(1);
 pub struct Cli {
     #[arg(long, default_value = ".tui-kanban.json")]
     pub board: PathBuf,
+    /// The colour theme: auto (Latte on light terminals, Mocha on dark
+    /// ones), latte, frappe, macchiato, mocha, ansi, the name of a theme in
+    /// ~/.config/tui-kanban/themes, or a path to a .toml theme file.
+    #[arg(long, value_name = "NAME")]
+    pub theme: Option<String>,
     /// Turn off animations (a non-empty REDUCE_MOTION does the same).
     #[arg(long)]
     pub no_animation: bool,
@@ -147,7 +152,12 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let store = JsonStore::new(cli.board);
     let animations = !cli.no_animation && !reduce_motion(env::var_os("REDUCE_MOTION").as_deref());
-    let mut app = App::new(store, Theme::from_env(), animations)?;
+    let theme = theme::resolve(
+        cli.theme.as_deref(),
+        &theme::Environment::from_env(),
+        theme::detect_light_background,
+    )?;
+    let mut app = App::new(store, theme, animations)?;
     let mut terminal = ratatui::try_init().context("could not initialize terminal")?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);

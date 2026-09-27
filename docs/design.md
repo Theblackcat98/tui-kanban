@@ -20,22 +20,30 @@ Goal: calm and readable at 80×24, and still good at 200×50.
 ## Colour roles
 
 Colours are named by role, never by palette colour. `src/theme.rs` maps
-each role to a Catppuccin colour (see #44 for the other flavours).
+each role to a colour for each theme: the four Catppuccin flavours
+(Latte, Frappé, Macchiato, Mocha), `ansi` for 16-colour terminals, and
+themes users write in TOML. `--theme auto` (the default) picks Latte on
+light terminals and Mocha on dark ones. On terminals without true colour
+the theme is mapped to the 256-colour palette, or replaced by `ansi`.
 
-| Role | Used for | Mocha |
-|---|---|---|
-| `bg` | The page background | base |
-| `panel` | The rail, the bars, the detail drawer, overlays | mantle |
-| `surface` | Card tiles and input fields | surface0 |
-| `selection` | The selected card tile | surface1 |
-| `border` | Overlay borders | surface2 |
-| `text` | Titles and body text | text |
-| `text_muted` | Descriptions, unfocused lane names | subtext0 |
-| `text_faint` | Metadata, counts, hints, placeholders | overlay1 |
-| `accent` | The focused control, the mode pill, overlay titles | mauve |
-| `focus` | The focused lane's underline and the rail marker | lavender |
-| `danger` / `success` / `warning` / `info` | Errors, "saved", warnings, info toasts | red / green / peach / sapphire |
-| `lanes[]` | Each lane's accent: its underline and its cards' bars | sapphire, peach, green, mauve, … |
+| Role | Used for | Dark flavours | Latte |
+|---|---|---|---|
+| `bg` | The page background | base | base |
+| `panel` | The rail, the bars, the detail drawer, overlays | mantle | mantle |
+| `surface` | Card tiles and input fields | surface0 | crust |
+| `selection` | The selected card tile | surface1 | surface0 |
+| `border` | Overlay borders | surface2 | surface1 |
+| `text` | Titles and body text | text | text |
+| `text_muted` | Descriptions, unfocused lane names | subtext1 | subtext1 |
+| `text_faint` | Metadata, counts, hints, placeholders | overlay2 | subtext0 |
+| `accent` | The focused control, the mode pill, overlay titles | mauve | mauve |
+| `focus` | The focused lane's underline and the rail marker | lavender | lavender |
+| `danger` / `success` / `warning` / `info` | Errors, "saved", warnings, info toasts | red / green / peach / sapphire | the same |
+| `lanes[]` | Each lane's accent: its underline and its cards' bars | sapphire, peach, green, mauve, … | the same |
+
+A test checks every flavour's contrast: at least 4.5:1 for `text` and
+`text_muted` on the backgrounds they are drawn on, and 3:1 for
+`text_faint`.
 
 With `NO_COLOR`, every role is the terminal's default colour and state is
 shown with attributes instead: **reversed** for the selection, **bold**

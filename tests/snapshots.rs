@@ -395,6 +395,20 @@ fn no_color_uses_no_colours() {
     insta::assert_debug_snapshot!("no_color_60x20", harness.render(60, 20));
 }
 
+/// Every built-in theme draws the page in its own colours.
+#[test]
+fn every_theme_renders() {
+    for name in ["latte", "frappe", "macchiato", "mocha", "ansi"] {
+        let mut harness = Harness::new(typical_board());
+        let theme = Theme::built_in(name).unwrap();
+        harness.app.model.ui.theme = theme.clone();
+        let buffer = harness.render(100, 30);
+        // A cell in the lane area, and the top bar.
+        assert_eq!(buffer[(60, 20)].bg, theme.bg, "{name}");
+        assert_eq!(buffer[(0, 0)].bg, theme.panel, "{name}");
+    }
+}
+
 // Key-sequence tests: drive the app with key presses and check both the
 // resulting board and the screen.
 
