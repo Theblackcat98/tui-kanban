@@ -41,6 +41,11 @@ the theme is mapped to the 256-colour palette, or replaced by `ansi`.
 | `danger` / `success` / `warning` / `info` | Errors, "saved", warnings, info toasts | red / green / peach / sapphire | the same |
 | `lanes[]` | Each lane's accent: its underline and its cards' bars | sapphire, peach, green, mauve, … | the same |
 
+A column's accent is its own `color` from the board file (a palette name
+such as `"teal"`, or `"#rrggbb"`) when it has one, and otherwise one of
+`lanes[]` chosen from the column's id, so it doesn't change when columns
+are reordered.
+
 A test checks every flavour's contrast: at least 4.5:1 for `text` and
 `text_muted` on the backgrounds they are drawn on, and 3:1 for
 `text_faint`.

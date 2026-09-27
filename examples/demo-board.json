@@ -5,6 +5,7 @@
     {
       "id": "backlog",
       "name": "Backlog",
+      "color": "sapphire",
       "tasks": [
         {
           "id": "00000000-0000-4000-8000-000000000001",
@@ -32,6 +33,7 @@
     {
       "id": "in-progress",
       "name": "In Progress",
+      "color": "peach",
       "tasks": [
         {
           "id": "00000000-0000-4000-8000-000000000004",
@@ -52,6 +54,7 @@
     {
       "id": "done",
       "name": "Done",
+      "color": "green",
       "tasks": [
         {
           "id": "00000000-0000-4000-8000-000000000006",

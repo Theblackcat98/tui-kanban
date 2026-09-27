@@ -95,6 +95,17 @@ pub(crate) fn help_line_count() -> usize {
     help::line_count()
 }
 
+/// A column's accent colour.
+pub(crate) fn lane_color(model: &Model, column: usize) -> Color {
+    match model.board.columns.get(column) {
+        Some(column) => model
+            .ui
+            .theme
+            .column_color(&column.id, column.color.as_deref()),
+        None => model.ui.theme.lane(column),
+    }
+}
+
 /// A text colour, leaving the background as it is.
 pub(crate) fn fg(color: Color) -> Style {
     Style::default().fg(color)

@@ -34,7 +34,7 @@ pub(crate) fn render(
         return;
     }
     let theme = &model.ui.theme;
-    let lane = theme.lane(column);
+    let lane = super::lane_color(model, column);
     let mut background = theme.surface;
     let mut tile = Style::default();
     if selected {

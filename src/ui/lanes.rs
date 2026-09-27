@@ -96,8 +96,8 @@ fn render_tabs(frame: &mut Frame<'_>, row: Rect, model: &Model) {
         }
         if index == model.ui.active_column {
             let theme = &model.ui.theme;
-            let style =
-                fg(theme.lane(index)).add_modifier(Modifier::BOLD | theme.selected_modifier);
+            let style = fg(super::lane_color(model, index))
+                .add_modifier(Modifier::BOLD | theme.selected_modifier);
             spans.push(Span::styled(format!("{name} {count}"), style));
         } else {
             spans.push(Span::styled(name.clone(), muted(model)));
@@ -203,7 +203,7 @@ pub(crate) fn header_line(
 /// The `▔` underline in the lane's colour, dimmed unless it is focused.
 pub(crate) fn underline(model: &Model, column: usize, focused: bool, width: u16) -> Line<'static> {
     let theme = &model.ui.theme;
-    let lane = theme.lane(column);
+    let lane = super::lane_color(model, column);
     let style = if theme.is_monochrome() {
         if focused {
             Style::default().add_modifier(Modifier::BOLD)

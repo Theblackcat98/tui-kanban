@@ -39,3 +39,13 @@ The roles are described in [design.md](design.md#colour-roles): `bg`,
 `panel`, `surface`, `selection`, `border`, `text`, `text_muted`,
 `text_faint`, `accent`, `focus`, `danger`, `success`, `warning`, `info`,
 and `lanes`, the list of lane colours used in turn.
+
+## Column colours
+
+Each column gets an accent from the theme's `lanes`, chosen from its id.
+To pick one yourself, give the column a `color` in the board file, as a
+palette name or `"#rrggbb"`:
+
+```json
+{ "id": "review", "name": "Review", "color": "teal", "tasks": [] }
+```

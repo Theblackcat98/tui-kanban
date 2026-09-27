@@ -17,6 +17,10 @@ pub struct Board {
 pub struct Column {
     pub id: String,
     pub name: String,
+    /// The column's accent: a palette name such as `"mauve"`, or
+    /// `"#rrggbb"`. Without one, a colour is chosen from the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     pub tasks: Vec<Task>,
 }
 
@@ -60,9 +64,9 @@ impl Default for Board {
             schema_version: SCHEMA_VERSION,
             name: "Project Board".to_owned(),
             columns: vec![
-                Column::new("backlog", "Backlog"),
-                Column::new("in-progress", "In Progress"),
-                Column::new("done", "Done"),
+                Column::new("backlog", "Backlog").with_color("sapphire"),
+                Column::new("in-progress", "In Progress").with_color("peach"),
+                Column::new("done", "Done").with_color("green"),
             ],
         }
     }
@@ -73,8 +77,14 @@ impl Column {
         Self {
             id: id.into(),
             name: name.into(),
+            color: None,
             tasks: Vec::new(),
         }
+    }
+
+    pub fn with_color(mut self, color: impl Into<String>) -> Self {
+        self.color = Some(color.into());
+        self
     }
 }
 
@@ -243,6 +253,20 @@ mod tests {
         assert_eq!(board.columns.len(), 3);
         assert_eq!(board.columns[1].id, "in-progress");
         assert!(board.task_count() == 0);
+    }
+
+    #[test]
+    fn column_colour_is_optional_in_the_file() {
+        // Files without colours still load, and columns without one are
+        // saved without the field.
+        let column: Column =
+            serde_json::from_str(r#"{"id": "a", "name": "A", "tasks": []}"#).unwrap();
+        assert_eq!(column.color, None);
+        assert!(!serde_json::to_string(&column).unwrap().contains("color"));
+        let column = Column::new("a", "A").with_color("teal");
+        let json = serde_json::to_string(&column).unwrap();
+        assert!(json.contains(r#""color":"teal""#));
+        assert_eq!(serde_json::from_str::<Column>(&json).unwrap(), column);
     }
 
     #[test]

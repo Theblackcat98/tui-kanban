@@ -409,6 +409,47 @@ fn every_theme_renders() {
     }
 }
 
+/// The colour of the underline below the lane headed `name`.
+fn underline_colour(buffer: &Buffer, name: &str) -> ratatui::style::Color {
+    let row: String = (0..buffer.area.width)
+        .map(|x| buffer[(x, 2)].symbol().to_owned())
+        .collect();
+    let x = row
+        .find(name)
+        .unwrap_or_else(|| panic!("no lane {name}: {row}"));
+    buffer[(x as u16, 3)].fg
+}
+
+/// #26: a column keeps its colour when columns move, and can set its own.
+#[test]
+fn column_colours_follow_the_column() {
+    let mut columns = vec![
+        column("alpha", "Alpha", vec![]),
+        column("beta", "Beta", vec![]),
+        column("gamma", "Gamma", vec![]),
+    ];
+    columns[1].color = Some("#ff8000".to_owned());
+    // With the rail focused, no lane is focused, so every underline is
+    // dimmed the same way.
+    let mut harness = Harness::new(board(columns.clone()));
+    harness.keys(&[KeyCode::Tab]);
+    let buffer = harness.render(100, 30);
+    let alpha = underline_colour(&buffer, "Alpha");
+    let gamma = underline_colour(&buffer, "Gamma");
+    assert_ne!(alpha, gamma);
+    let ratatui::style::Color::Rgb(r, g, b) = underline_colour(&buffer, "Beta") else {
+        panic!("expected an RGB colour");
+    };
+    assert!(r > g && g > b, "Beta should be orange: {r} {g} {b}");
+
+    columns.reverse();
+    let mut harness = Harness::new(board(columns));
+    harness.keys(&[KeyCode::Tab]);
+    let buffer = harness.render(100, 30);
+    assert_eq!(underline_colour(&buffer, "Alpha"), alpha);
+    assert_eq!(underline_colour(&buffer, "Gamma"), gamma);
+}
+
 // Key-sequence tests: drive the app with key presses and check both the
 // resulting board and the screen.
 

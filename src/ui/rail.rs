@@ -62,7 +62,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model) {
                 area.x + 1,
                 y,
                 1,
-                Line::from(Span::styled("▌", fg(theme.lane(index)))),
+                Line::from(Span::styled("▌", fg(super::lane_color(model, index)))),
             );
         }
         let count = count_label(model, index);

@@ -401,16 +401,68 @@ impl Theme {
     /// `#rrggbb`, to what the theme can show.
     pub fn adapt(&self, color: Color) -> Color {
         if self.is_monochrome() {
-            Color::Reset
-        } else if matches!(self.bg, Color::Indexed(_)) {
-            nearest_256(color)
-        } else if self.bg == Color::Reset {
-            // The 16-colour theme: fall back to the lane colours.
-            self.lane(0)
-        } else {
-            color
+            return Color::Reset;
+        }
+        if !matches!(color, Color::Rgb(..)) {
+            return color;
+        }
+        match self.bg {
+            Color::Indexed(_) => nearest_256(color),
+            Color::Rgb(..) => color,
+            // The 16-colour theme.
+            _ => nearest_ansi(color),
         }
     }
+
+    /// A column's accent: its own `color` if this theme knows it, or else
+    /// a lane colour chosen by its id, so it doesn't change when columns
+    /// are reordered or added.
+    pub fn column_color(&self, id: &str, color: Option<&str>) -> Color {
+        match color.and_then(|name| self.color(name)) {
+            Some(color) => self.adapt(color),
+            None => self.lane(stable_hash(id) as usize),
+        }
+    }
+}
+
+/// FNV-1a: a hash that is the same in every build and on every platform,
+/// unlike the standard library's.
+fn stable_hash(text: &str) -> u32 {
+    text.bytes().fold(0x811c_9dc5, |hash, byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+    })
+}
+
+/// The nearest of the 16 standard colours, using typical xterm values.
+fn nearest_ansi(color: Color) -> Color {
+    let Color::Rgb(r, g, b) = color else {
+        return color;
+    };
+    const COLOURS: [(Color, (u8, u8, u8)); 14] = [
+        (Color::Red, (205, 0, 0)),
+        (Color::Green, (0, 205, 0)),
+        (Color::Yellow, (205, 205, 0)),
+        (Color::Blue, (0, 0, 238)),
+        (Color::Magenta, (205, 0, 205)),
+        (Color::Cyan, (0, 205, 205)),
+        (Color::Gray, (229, 229, 229)),
+        (Color::DarkGray, (127, 127, 127)),
+        (Color::LightRed, (255, 0, 0)),
+        (Color::LightGreen, (0, 255, 0)),
+        (Color::LightYellow, (255, 255, 0)),
+        (Color::LightBlue, (92, 92, 255)),
+        (Color::LightMagenta, (255, 0, 255)),
+        (Color::LightCyan, (0, 255, 255)),
+    ];
+    let distance = |(r2, g2, b2): (u8, u8, u8)| {
+        let d = |a: u8, b: u8| (i32::from(a) - i32::from(b)).pow(2);
+        d(r, r2) + d(g, g2) + d(b, b2)
+    };
+    COLOURS
+        .iter()
+        .min_by_key(|(_, rgb)| distance(*rgb))
+        .map(|(color, _)| *color)
+        .expect("a non-empty list")
 }
 
 fn parse_hex(hex: &str) -> Option<Color> {
@@ -793,6 +845,56 @@ mod tests {
         assert!(error("[colors]\nlanes = []").contains("at least one"));
         assert!(error("colours = 1").contains("unknown key"));
         assert!(error("[colors").contains("TOML"));
+    }
+
+    #[test]
+    fn column_colours() {
+        let theme = Theme::mocha();
+        // A column's own colour, by name or hex.
+        assert_eq!(
+            theme.column_color("a", Some("teal")),
+            theme.color("teal").unwrap()
+        );
+        assert_eq!(
+            theme.column_color("a", Some("#102030")),
+            Color::Rgb(16, 32, 48)
+        );
+        // Otherwise chosen by id: the same whatever the column's position,
+        // and an unknown colour name falls back to it.
+        let by_id = theme.column_color("review", None);
+        assert_eq!(theme.column_color("review", Some("nope")), by_id);
+        assert!(theme.lanes.contains(&by_id));
+        let ids = ["backlog", "in-progress", "done", "review", "blocked", "qa"];
+        let colours: std::collections::HashSet<_> = ids
+            .iter()
+            .map(|id| format!("{:?}", theme.column_color(id, None)))
+            .collect();
+        assert!(colours.len() > 1);
+        // Adapted to the terminal.
+        assert_eq!(
+            Theme::ansi().column_color("a", Some("#ff1010")),
+            Color::LightRed
+        );
+        assert_eq!(
+            Theme::ansi().column_color("a", Some("mauve")),
+            Color::Magenta
+        );
+        assert!(matches!(
+            Theme::mocha()
+                .to_256_colors()
+                .column_color("a", Some("#102030")),
+            Color::Indexed(_)
+        ));
+        assert_eq!(
+            Theme::monochrome().column_color("a", Some("#ff0000")),
+            Color::Reset
+        );
+    }
+
+    #[test]
+    fn stable_hash_is_fnv1a() {
+        assert_eq!(stable_hash(""), 0x811c_9dc5);
+        assert_eq!(stable_hash("a"), 0xe40c_292c);
     }
 
     #[test]
