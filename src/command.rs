@@ -1614,6 +1614,52 @@ impl Key {
     }
 }
 
+/// Every listed command as Markdown tables, one per group, for the
+/// README: its keys, what it does, and where it works. A test keeps the
+/// README's copy up to date.
+pub fn markdown_reference() -> String {
+    let mut text = String::new();
+    for group in Group::ALL {
+        let rows: Vec<&Command> = COMMANDS
+            .iter()
+            .filter(|command| {
+                command.group == group && command.listed && !command.is_paired_into_another()
+            })
+            .collect();
+        if rows.is_empty() {
+            continue;
+        }
+        text.push_str(&format!(
+            "#### {}\n\n| Keys | | Where |\n|---|---|---|\n",
+            group.title()
+        ));
+        for command in rows {
+            let contexts: Vec<&str> = Context::ALL
+                .iter()
+                .filter(|context| command.contexts.contains(**context))
+                .filter(|context| **context != Context::TooSmall)
+                .map(|context| context.title())
+                .collect();
+            let place = if contexts.len() > 8 {
+                "anywhere".to_owned()
+            } else {
+                contexts.join(", ")
+            };
+            let label = command.help_label();
+            // The dialog a command belongs to is already in its label.
+            let label = label.split_once(": ").map_or(label, |(_, rest)| rest);
+            text.push_str(&format!(
+                "| `{}` | {} | {} |\n",
+                command.keys_label().replace('|', "\\|"),
+                label,
+                place
+            ));
+        }
+        text.push('\n');
+    }
+    text.trim_end().to_owned() + "\n"
+}
+
 /// How a command's first key is written in messages, as "u" in "u to
 /// undo", or `None` if the config file left it without keys.
 pub fn key_label(id: CommandId) -> Option<String> {

@@ -5,6 +5,12 @@ edition = "2024"
 rust-version = "1.88"
 description = "A beautiful terminal Kanban board"
 license = "MIT"
+repository = "https://github.com/Theblackcat98/tui-kanban"
+readme = "README.md"
+keywords = ["kanban", "tui", "terminal", "todo"]
+categories = ["command-line-utilities"]
+# The demo and screenshots are for the README on GitHub.
+exclude = ["docs/demo.gif", "docs/screenshots/"]
 
 [dependencies]
 anyhow = "1.0"
