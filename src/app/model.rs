@@ -146,6 +146,8 @@ pub enum SaveState {
 pub struct Scroll {
     /// Each lane's first visible card, as an index into its visible tasks.
     lanes: Vec<usize>,
+    /// The first lane shown when not all of them fit.
+    pub first_lane: usize,
     /// The first visible item of the All tasks list.
     pub all_tasks: usize,
 }

@@ -3,7 +3,7 @@ source: tests/snapshots.rs
 expression: "harness.screen(width, height)"
 ---
  Snapshot Board   Board · All tasks
-
+                                                   2 more ›
  Backlog  3
  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 

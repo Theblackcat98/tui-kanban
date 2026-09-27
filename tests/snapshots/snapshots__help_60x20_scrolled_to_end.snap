@@ -3,7 +3,7 @@ source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
-   ╭ Keyboard shortcuts ────────────────────────────────╮
+   ╭ Keyboard shortcuts ────────────────────────────────╮ ›
  Ba│ Editor, search and dialogs                         │
  ▔▔│   Enter               search: apply                │▔▔
    │   Tab / Shift+Tab     editor: switch field         │

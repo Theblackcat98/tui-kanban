@@ -326,6 +326,9 @@ fn twelve_columns() {
     let mut harness = Harness::new(many_columns_board());
     screen_snapshot!("twelve_columns_160x45", harness, 160, 45);
     screen_snapshot!("twelve_columns_100x30", harness, 100, 30);
+    // #25: the lanes scroll sideways to follow the active column.
+    harness.keys(&[KeyCode::Char('l'); 5]);
+    screen_snapshot!("twelve_columns_scrolled_100x30", harness, 100, 30);
 }
 
 #[test]

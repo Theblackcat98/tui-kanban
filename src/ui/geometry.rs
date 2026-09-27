@@ -121,18 +121,42 @@ pub(crate) fn split_evenly(width: u16, count: u16, gap: u16) -> Vec<(u16, u16)> 
 
 /// The lanes shown in the Board view, as (column index, area).
 pub(crate) fn lanes(model: &Model, page: &Page) -> Vec<(usize, Rect)> {
-    if model.board.columns.is_empty() {
-        return Vec::new();
-    }
     let area = content(page.main);
-    if !page.breakpoint.shows_several_lanes() {
-        return vec![(model.ui.active_column, area)];
-    }
-    split_evenly(area.width, model.board.columns.len() as u16, LANE_GUTTER)
+    let range = lane_range(model, page);
+    split_evenly(area.width, range.len() as u16, LANE_GUTTER)
         .into_iter()
-        .enumerate()
-        .map(|(column, (x, width))| (column, Rect::new(area.x + x, area.y, width, area.height)))
+        .zip(range)
+        .map(|((x, width), column)| (column, Rect::new(area.x + x, area.y, width, area.height)))
         .collect()
+}
+
+/// The columns shown as lanes: as many as fit at [`LANE_MIN_WIDTH`] or
+/// wider (one at the Compact breakpoint), starting from the remembered
+/// first lane and scrolled sideways just enough to show the active one.
+pub(crate) fn lane_range(model: &Model, page: &Page) -> std::ops::Range<usize> {
+    let columns = model.board.columns.len();
+    if columns == 0 {
+        return 0..0;
+    }
+    let count = if page.breakpoint.shows_several_lanes() {
+        layout::lanes_that_fit(content(page.main).width).min(columns)
+    } else {
+        1
+    };
+    let active = model.ui.active_column.min(columns - 1);
+    let mut first = model.ui.scroll.first_lane.min(columns - count);
+    if active < first {
+        first = active;
+    } else if active >= first + count {
+        first = active + 1 - count;
+    }
+    first..first + count
+}
+
+/// The row above the lanes, where "‹ N more" and "N more ›" go.
+pub(crate) fn lane_overflow_row(page: &Page) -> Rect {
+    let area = content(page.main);
+    Rect::new(area.x, page.main.y, area.width, 1.min(page.main.height))
 }
 
 /// The rows of a lane.
@@ -488,6 +512,7 @@ pub(crate) fn sync_scroll(model: &mut Model) {
     let page = page(model, Rect::new(0, 0, width, height));
     match model.ui.view {
         ViewMode::Board => {
+            model.ui.scroll.first_lane = lane_range(model, &page).start;
             for (column, area) in lanes(model, &page) {
                 let offset = lane_offset(model, column, area);
                 model.ui.scroll.set_lane(column, offset);

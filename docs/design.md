@@ -61,7 +61,7 @@ shared with the key handlers so what is drawn and what keys do agree.
 | Breakpoint | Width | Layout |
 |---|---|---|
 | Compact | < 80 | One lane at a time, with a tab strip naming the others. No rail. The detail drawer covers the whole width. |
-| Regular | 80–139 | The rail, plus as many lanes as fit at 28 cells or more; the rest scroll sideways. The detail drawer slides in over the right side. |
+| Regular | 80–139 | The rail, plus as many lanes as fit at 24 cells or more; the rest scroll sideways, with `‹ N more` / `N more ›` above them. The detail drawer slides in over the right side. |
 | Wide | ≥ 140 | As Regular, but the detail drawer is pinned beside the lanes instead of covering them. |
 
 Below 40×12 the app shows a "terminal too small" screen and only quits.

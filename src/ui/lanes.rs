@@ -13,7 +13,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::geometry::{self, LaneParts, Page, lane_heights, lane_offset, lane_parts, visible_end};
-use super::text::truncate_text;
+use super::text::{self, truncate_text};
 use super::{blend_color, card, faint, fg, muted, put};
 use crate::app::{FocusRegion, Model};
 use crate::clock::Clock;
@@ -33,6 +33,32 @@ pub(crate) fn render(frame: &mut Frame<'_>, page: &Page, model: &Model, clock: C
     }
     for (column, area) in geometry::lanes(model, page) {
         render_lane(frame, area, model, column, clock);
+    }
+    let range = geometry::lane_range(model, page);
+    let row = geometry::lane_overflow_row(page);
+    if range.start > 0 {
+        put(
+            frame,
+            row.x,
+            row.y,
+            row.width,
+            Line::from(Span::styled(
+                format!("‹ {} more", range.start),
+                faint(model),
+            )),
+        );
+    }
+    let after = model.board.columns.len() - range.end;
+    if after > 0 {
+        let text = format!("{after} more ›");
+        let width = text::width(&text) as u16;
+        put(
+            frame,
+            row.right().saturating_sub(width),
+            row.y,
+            width,
+            Line::from(Span::styled(text, faint(model))),
+        );
     }
 }
 

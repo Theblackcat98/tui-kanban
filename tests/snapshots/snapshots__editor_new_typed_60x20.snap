@@ -3,7 +3,7 @@ source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
-
+                                                   2 more ›
  Backlog  3
  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
  ╭ New task ──────────────────────────────────────────────╮

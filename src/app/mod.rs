@@ -585,6 +585,25 @@ mod tests {
     }
 
     #[test]
+    fn lanes_scroll_sideways_to_the_active_column() {
+        // #25: with many columns, lanes keep a minimum width and scroll.
+        let (_directory, mut app) = test_app();
+        app.model.board.columns = (0..8)
+            .map(|index| crate::domain::Column::new(format!("c{index}"), format!("Stage {index}")))
+            .collect();
+        app.resize(100, 30);
+        assert_eq!(app.model.ui.scroll.first_lane, 0);
+        press(&mut app, &[KeyCode::Char('l'); 3]);
+        assert_eq!(app.model.ui.active_column, 3);
+        // 76 cells fit three lanes of 24 or wider, so the view follows.
+        assert_eq!(app.model.ui.scroll.first_lane, 1);
+        press(&mut app, &[KeyCode::Char('h'); 2]);
+        assert_eq!(app.model.ui.scroll.first_lane, 1);
+        press(&mut app, &[KeyCode::Char('h')]);
+        assert_eq!(app.model.ui.scroll.first_lane, 0);
+    }
+
+    #[test]
     fn detail_scroll_stops_at_the_end_of_the_text() {
         // #8: PgDn used to scroll past the description into blank space.
         let (_directory, mut app) = test_app();
