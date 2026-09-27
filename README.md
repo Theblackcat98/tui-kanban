@@ -1,29 +1,25 @@
 # tui-kanban
 
-A calm, keyboard-first Kanban board for the terminal. Each project keeps
-its board in a small JSON file next to its code, found the way git finds
-`.git`, so running `tui-kanban` anywhere in the project opens it.
+A calm, keyboard-first Kanban board for your terminal. Each project
+keeps its board in a small JSON file next to its code, and running
+`tui-kanban` anywhere in the project opens it, the way git finds `.git`.
 
 ![A demo: moving a card, a work-in-progress limit, a card's checklist, search, All tasks, the command palette and collapsing a lane](docs/demo.gif)
 
-- **Board and All tasks views.** Lanes for the workflow, or every task
-  grouped by column. Narrow terminals get one lane at a time with a tab
-  strip; wide ones pin the detail drawer beside the lanes.
-- **Fast to drive.** `h j k l`, `1`–`9` and `g` + a lane's initial to
-  move; `H`/`L` and `J`/`K` to move cards; a command palette (`:`), a
-  which-key panel (`Space`), and undo and redo for every change.
-- **Markdown descriptions** with checklists you tick from the detail
-  drawer, edited in a built-in editor or your own `$EDITOR`.
-- **Fuzzy search with filter terms**: `in:progress`, `#tag`,
-  `updated:<7d`, with the matched letters highlighted.
+- **Two views**: lanes for the workflow, or every task grouped by column.
+- **Fast to drive**: vim-style keys, a command palette, a which-key
+  panel, and undo and redo for every change.
+- **Markdown descriptions** with checklists you tick without leaving the
+  board, edited in a built-in editor or your own `$EDITOR`.
+- **Fuzzy search with filter terms** such as `in:progress`, `#tag` and
+  `updated:<7d`.
 - **Columns managed in the app**, with colours, work-in-progress limits
-  and lanes that collapse to a strip.
-- **The mouse works too**: click, double-click, scroll, and drag cards.
-- **Safe with your data**: saved in the background, atomically; changes
-  another program makes to the file are picked up, and never silently
-  overwritten.
-- **Themes**: the four Catppuccin flavours, picked to match your
-  terminal, 16 colours, your own, or none with `NO_COLOR`.
+  and lanes that fold away.
+- **Mouse support**: click, scroll and drag cards between lanes.
+- **Safe with your data**: saved in the background and atomically, and
+  never silently overwritten when another program changes the file.
+- **Themes**: the four Catppuccin flavours, matched to your terminal's
+  background, 16 colours, your own, or none with `NO_COLOR`.
 
 ## Install
 
@@ -36,38 +32,128 @@ cargo install --git https://github.com/Theblackcat98/tui-kanban
 or, from a clone, `cargo install --path .`. Release binaries and a
 crates.io release are planned.
 
-## Usage
+## Quick start
 
 ```sh
 cd ~/src/my-project
 tui-kanban
 ```
 
-tui-kanban looks for `.tui-kanban.json` in the current directory and
-each one above it, stopping at the git root. If there isn't one, it
-asks whether to create one here or to open your personal board
-(`~/.local/share/tui-kanban/boards/personal.json`).
+The first time, there's no board yet: press `c` to create one in the
+current directory (it's named after the directory, and saved as
+`.tui-kanban.json`), or `p` to use your personal board instead. From
+then on, `tui-kanban` finds it from anywhere in the project, up to the
+git root.
 
-| Option | |
+Then `n` adds a task, `Enter` opens it, `H` and `L` move it between
+lanes, and `q` quits. Press `?` for the keys on the screen you're on,
+`:` to search every command, or `Space` for a panel of the keys you can
+press next.
+
+To try it on a sample board first:
+
+```sh
+cp examples/demo-board.json /tmp/demo.json && tui-kanban --board /tmp/demo.json
+```
+
+## A tour
+
+### The board
+
+![The Board view: a column rail on the left, and Backlog, In Progress and Done lanes of cards](docs/screenshots/board.png)
+
+Each column is a lane, and each card shows its title, the first line of
+its description, when it last changed, and checklist progress (`✓ 2/4`).
+`h j k l` or the arrow keys move around, `1`–`9` jump to a lane, `H`/`L`
+move a card to the next lane and `J`/`K` reorder it. The status line
+shows what mode you're in, whether everything is saved, and the keys
+that make sense right now.
+
+On narrow terminals the board shows one lane at a time with a tab strip
+naming the others; lanes that don't fit scroll sideways.
+
+### Details and checklists
+
+![The detail drawer open beside the board, showing a Markdown description with a checklist](docs/screenshots/detail.png)
+
+`Enter` opens a card in the drawer. Descriptions are Markdown: headings,
+lists, quotes, code and checklists. `Tab` moves between checklist items
+and `Space` ticks them. `e` edits the card, and `E` opens the
+description in your own `$EDITOR`.
+
+### Search
+
+![Searching for "in:progress card": one match, with the other lanes empty](docs/screenshots/search.png)
+
+`/` filters every lane as you type. Text matches titles fuzzily, and
+terms narrow it down:
+
+| Term | Matches |
 |---|---|
-| `--board <PATH OR NAME>` | Open a board file, or a board by name: a recent board with that name, or a personal board of that name in the data directory |
-| `--theme <NAME>` | `auto` (the default), `latte`, `frappe`, `macchiato`, `mocha`, `ansi`, or your own; see [docs/themes.md](docs/themes.md) |
-| `--no-animation` | Turn off animations; a non-empty `REDUCE_MOTION` does the same |
-| `--no-mouse` | Leave the mouse to the terminal, so text can be selected as usual |
-| `tui-kanban config` | Print where the config file is; add `--print-default` for a commented one with every default |
+| `in:progress` | tasks in a column whose name contains "progress" |
+| `#bug` | tasks with the hashtag `#bug` |
+| `updated:<7d`, `created:>2w`, `updated:today` | tasks by when they changed or were made |
+| `'exact`, `^prefix`, `suffix$`, `!not` | as in fzf |
 
-A non-empty `NO_COLOR` turns colour off; state is then shown with bold,
-reversed and underlined text.
+`↓`/`↑` step through the matches, `Enter` keeps the filter while you
+work, and `Esc` clears it.
 
-Press `b` to switch between recent boards, `?` for the keys on the
-screen you're on, `:` for every command, and `Space` for a panel of the
-keys you can press next.
+### All tasks
 
-| The board | A card's details |
-|---|---|
-| ![The Board view with three lanes and the column rail](docs/screenshots/board.png) | ![The detail drawer with a Markdown checklist](docs/screenshots/detail.png) |
-| **Search with filter terms** | **All tasks** |
-| ![Searching for "in:progress card"](docs/screenshots/search.png) | ![The All tasks view, grouped by column](docs/screenshots/all-tasks.png) |
+![The All tasks view: every task in a grid, grouped under each column's name](docs/screenshots/all-tasks.png)
+
+`v` switches to every task at once, grouped by column, for a quick
+overview. The same keys work on the cards here.
+
+### The command palette and which-key
+
+![The command palette, with "move" typed and five matching commands](docs/screenshots/palette.png)
+
+`:` or `Ctrl+K` lists every command available where you are, plus "go
+to lane" and "go to task" for each one, with the keys for each command
+on the right. Commands you run from it come first next time.
+
+![The which-key panel along the bottom of the board, listing every key](docs/screenshots/which-key.png)
+
+`Space` shows every key you can press on the current screen; the next
+key does what it normally does.
+
+### Columns and work-in-progress limits
+
+![The rail focused on In Progress, which is at its limit of 3, with Done collapsed to a narrow strip](docs/screenshots/columns.png)
+
+`Tab` focuses the column rail. There, `a` adds a column, `r` renames
+it, `d` deletes it (asking where its tasks should go), `J`/`K` reorder,
+`c` picks a colour and `w` sets a work-in-progress limit. A column at
+its limit shows its count (`3/3`) in orange, and red past it, and
+moving another task in asks first. `z` folds a lane into a narrow strip,
+say to keep Done out of the way.
+
+### Boards
+
+`b` switches between the boards you've opened recently, and your
+personal board. `--board` opens one by path, or by name.
+
+### Mouse
+
+Click a card to select it and double-click to open it; click a lane, a
+rail entry or a view name to go there, and a hint in the status line to
+run it. The wheel scrolls lanes, the drawer and menus. Drag a card to
+move it: a line shows where it will land. Capturing the mouse stops the
+terminal's own text selection (most terminals still select with `Shift`
+held); `--no-mouse`, or `mouse = false` in the config file, turns it
+off.
+
+### Themes
+
+![The same board in the light Catppuccin Latte theme](docs/screenshots/latte.png)
+
+By default tui-kanban asks the terminal whether its background is light
+or dark and picks Catppuccin Latte or Mocha to match. `--theme` picks
+one of the four Catppuccin flavours, `ansi` (the terminal's own 16
+colours), or a theme of your own; see [docs/themes.md](docs/themes.md).
+A non-empty `NO_COLOR` turns colour off, showing state with bold,
+reversed and underlined text instead.
 
 ## Keys
 
@@ -89,10 +175,6 @@ The essentials:
 | `b` | Switch boards |
 | `?` / `:` / `Space` | Help / command palette / which-key |
 | `q` | Quit |
-
-From the column rail, `a` adds a column, `r` renames it, `d` deletes it
-(asking where its tasks go), `J`/`K` reorder, `c` picks its colour and
-`w` sets a work-in-progress limit.
 
 <details>
 <summary>Every key, generated from the command table</summary>
@@ -218,16 +300,15 @@ From the column rail, `a` adds a column, `r` renames it, `d` deletes it
 
 Keys can be changed in the config file.
 
-### Mouse
+## Options
 
-Click a card to select it and double-click to open it; click a lane
-header, a rail entry or a view name to go there, and a hint in the
-status line to run it. The wheel scrolls lanes, the All tasks grid, the
-detail drawer and menus. Drag a card to move it: a line shows where it
-will land, and dropping it on a rail entry or a collapsed lane puts it
-at the end of that column. Capturing the mouse stops the terminal's own
-text selection (most terminals still select with `Shift` held); use
-`--no-mouse`, or `mouse = false` in the config file, to turn it off.
+| Option | |
+|---|---|
+| `--board <PATH OR NAME>` | Open a board file, or a board by name: a recent board with that name, or a personal board of that name in the data directory |
+| `--theme <NAME>` | `auto` (the default), `latte`, `frappe`, `macchiato`, `mocha`, `ansi`, or your own |
+| `--no-animation` | Turn off animations; a non-empty `REDUCE_MOTION` does the same |
+| `--no-mouse` | Leave the mouse to the terminal, so text can be selected as usual |
+| `tui-kanban config` | Print where the config file is; add `--print-default` for a commented one with every default |
 
 ## Configuration
 
@@ -303,13 +384,6 @@ Where files live:
 | Config and themes | `~/.config/tui-kanban/` (`$XDG_CONFIG_HOME`) |
 | Recent boards, the dismissed tip | `~/.local/state/tui-kanban/` (`$XDG_STATE_HOME`) |
 
-[examples/demo-board.json](examples/demo-board.json) is a small board
-to try on a copy:
-
-```sh
-cp examples/demo-board.json /tmp/demo.json && tui-kanban --board /tmp/demo.json
-```
-
 ## Development
 
 ```sh
@@ -326,8 +400,9 @@ cargo fmt --check
   `src/command.rs`; `UPDATE_README=1 cargo test --test readme`
   regenerates it.
 - The demo and screenshots are recorded with
-  [vhs](https://github.com/charmbracelet/vhs):
-  `cargo build --release && vhs docs/demo.tape`.
+  [vhs](https://github.com/charmbracelet/vhs), each from a tape that
+  runs on a copy of the demo board: `cargo build --release`, then
+  `vhs docs/demo.tape` and `vhs docs/screenshots.tape`.
 - The minimum supported Rust version is 1.88, checked in CI.
 
 ## License
