@@ -1,4 +1,4 @@
-# The README's demo and screenshots, recorded with vhs
+# The README's demo, recorded with vhs
 # (https://github.com/charmbracelet/vhs). From the repository root:
 #
 #   cargo build --release && vhs docs/demo.tape
@@ -14,6 +14,11 @@ Set FontSize 15
 Set Width 1280
 Set Height 720
 Set Padding 16
+Set WindowBar Colorful
+Set WindowBarSize 36
+Set BorderRadius 10
+Set Margin 20
+Set MarginFill "#11111b"
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 70ms
 Set Framerate 24
@@ -36,9 +41,6 @@ Type "tui-kanban"
 Sleep 400ms
 Enter
 Sleep 2s
-Screenshot docs/screenshots/board.png
-# A screenshot is taken on the next frame, so wait for it.
-Sleep 500ms
 
 # Move through the cards, and move one along.
 Type "j"
@@ -64,8 +66,6 @@ Tab
 Sleep 400ms
 Space
 Sleep 1s
-Screenshot docs/screenshots/detail.png
-Sleep 500ms
 Escape
 Sleep 600ms
 
@@ -74,16 +74,12 @@ Type "/"
 Sleep 300ms
 Type "in:progress card"
 Sleep 1.2s
-Screenshot docs/screenshots/search.png
-Sleep 500ms
 Escape
 Sleep 600ms
 
 # Every task, grouped by column.
 Type "v"
 Sleep 1.5s
-Screenshot docs/screenshots/all-tasks.png
-Sleep 500ms
 Type "v"
 Sleep 600ms
 
