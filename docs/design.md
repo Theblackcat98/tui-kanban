@@ -157,6 +157,13 @@ colour). Inputs are `surface` fields; the active one has an accent bar,
 and empty ones show a placeholder. Every overlay's last row lists its
 own keys, generated from the command table.
 
+The editor has a one-line title that scrolls sideways and a
+multi-line description that wraps at words and grows to fill the
+overlay (3 to 10 rows). Enter saves from the title and starts a new line
+in the description; Ctrl+S saves from either. Both fields take readline
+keys (Ctrl+A/E/W/U/K, Alt+B/F), Ctrl+Z / Ctrl+R to undo and redo,
+Shift+arrows to select, and pasted text in one piece.
+
 Help lists the keys for the screen it was opened from (`Keys · Board`,
 `Keys · Details`, …), grouped as in the command table.
 

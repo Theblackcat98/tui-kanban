@@ -3,7 +3,8 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::model::Model;
+use super::editor::EditorField;
+use super::model::{Model, Screen};
 use crate::command::{self, CommandId, Context};
 use crate::tui::event::accepts_key;
 
@@ -21,6 +22,8 @@ pub enum Action {
     GoToLane(char),
     /// A key that doesn't complete the pending prefix.
     CancelPrefix,
+    /// Text pasted into the terminal (with bracketed paste).
+    Paste(String),
     Resize(u16, u16),
     Tick,
     /// The result of an [`Effect::Save`].
@@ -47,6 +50,18 @@ pub fn keymap(model: &Model, key: KeyEvent) -> Option<Action> {
     let context = model.context();
     if let Some(pending) = model.ui.pending {
         return Some(complete_prefix(context, pending.prefix, &key));
+    }
+    // Enter saves from the title, but types a line break in the
+    // description.
+    if context == Context::Editor
+        && key.code == KeyCode::Enter
+        && key.modifiers.is_empty()
+        && matches!(
+            model.ui.screens.last(),
+            Some(Screen::Editor(editor)) if editor.field == EditorField::Description
+        )
+    {
+        return Some(Action::Edit(key));
     }
     if let Some(id) = command::lookup(context, &key) {
         if id == CommandId::JumpToLane

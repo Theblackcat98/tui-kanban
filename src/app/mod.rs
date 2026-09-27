@@ -9,26 +9,32 @@
 //! ```
 
 mod action;
+mod editor;
 mod history;
 mod input;
 mod model;
 mod update;
 
 pub use action::{Action, Effect, keymap};
+pub use editor::{EditorField, EditorState, Placement};
 pub use history::History;
 pub use input::TextInput;
 pub use model::{
-    EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Scroll, Search, Session,
-    Toast, ToastKind, Ui, ViewMode, VisibleTask,
+    FocusRegion, Model, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind, Ui, ViewMode,
+    VisibleTask,
 };
 pub use update::update;
 
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyEvent};
+use ratatui::crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEvent,
+};
+use ratatui::crossterm::execute;
 use std::collections::VecDeque;
 use std::env;
+use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -183,13 +189,27 @@ pub fn run() -> Result<()> {
     if let Some(state) = crate::paths::state_dir() {
         app = app.with_tip_marker(state.join("tip-dismissed"));
     }
-    let mut terminal = ratatui::try_init().context("could not initialize terminal")?;
+    let mut terminal = init_terminal()?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);
     }
     let result = run_loop(&mut terminal, &mut app);
-    let restore_result = ratatui::try_restore().context("could not restore terminal");
+    let restore_result = restore_terminal();
     result.and(restore_result).and(app.finish())
+}
+
+/// Enters the alternate screen and raw mode, with bracketed paste so a
+/// multi-line paste arrives as one piece of text rather than as keys.
+fn init_terminal() -> Result<DefaultTerminal> {
+    let terminal = ratatui::try_init().context("could not initialize terminal")?;
+    // Terminals without bracketed paste ignore the request.
+    let _ = execute!(io::stdout(), EnableBracketedPaste);
+    Ok(terminal)
+}
+
+fn restore_terminal() -> Result<()> {
+    let _ = execute!(io::stdout(), DisableBracketedPaste);
+    ratatui::try_restore().context("could not restore terminal")
 }
 
 fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
@@ -212,6 +232,10 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             match event::read()? {
                 Event::Key(key) => {
                     app.handle_key(key, Clock::now());
+                    needs_redraw = true;
+                }
+                Event::Paste(text) => {
+                    app.dispatch(Action::Paste(text), Clock::now());
                     needs_redraw = true;
                 }
                 Event::Resize(width, height) => {
@@ -339,12 +363,41 @@ mod tests {
         press(&mut app, &[KeyCode::Char('n')]);
         type_text(&mut app, "Ship it");
         press(&mut app, &[KeyCode::Tab]);
-        type_text(&mut app, "Make it beautiful");
+        type_text(&mut app, "Make it");
+        // #22: Enter starts a new line in the description; Ctrl+S saves.
         press(&mut app, &[KeyCode::Enter]);
+        type_text(&mut app, "beautiful");
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+            clock(),
+        );
         assert_eq!(app.model.board.task_count(), 1);
         assert_eq!(app.model.board.columns[0].tasks[0].title, "Ship it");
+        assert_eq!(
+            app.model.board.columns[0].tasks[0].description,
+            "Make it\nbeautiful"
+        );
         assert!(app.model.ui.screens.is_empty());
         assert_eq!(app.store.load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn pasting_inserts_text_where_the_user_is_typing() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('n')]);
+        app.dispatch(Action::Paste("Two\nlines".to_owned()), clock());
+        press(&mut app, &[KeyCode::Tab]);
+        app.dispatch(Action::Paste("Line one\r\nLine two".to_owned()), clock());
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::BackTab, KeyCode::Enter],
+        );
+        let task = &app.model.board.columns[0].tasks[0];
+        assert_eq!(task.title, "Two lines");
+        assert_eq!(task.description, "Line one\nLine two");
+        press(&mut app, &[KeyCode::Char('/')]);
+        app.dispatch(Action::Paste("two".to_owned()), clock());
+        assert_eq!(app.model.ui.search.query, "two");
     }
 
     #[test]

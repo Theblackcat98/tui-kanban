@@ -460,8 +460,12 @@ fn keys_create_a_task_and_move_it() {
         .keys(&[KeyCode::Char('n')])
         .type_text("Ship it")
         .keys(&[KeyCode::Tab])
-        .type_text("Before Friday")
-        .keys(&[KeyCode::Enter, KeyCode::Char('L')]);
+        .type_text("Before Friday");
+    harness.app.handle_key(
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+        clock(),
+    );
+    harness.keys(&[KeyCode::Char('L')]);
 
     let board = &harness.app.model.board;
     assert_eq!(board.task_count(), 8);

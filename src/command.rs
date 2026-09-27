@@ -794,8 +794,8 @@ pub const COMMANDS: &[Command] = &[
     .hint(2, "switch field"),
     Command::new(
         C::SaveTask,
-        &[key(KeyCode::Enter)],
-        "editor: save",
+        &[ctrl('s'), key(KeyCode::Enter)],
+        "editor: save (Enter in the title)",
         G::Editing,
         only(Context::Editor),
     )

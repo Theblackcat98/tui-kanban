@@ -5,12 +5,10 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use super::action::{Action, Effect};
+use super::editor::{EditorField, EditorState, Placement};
 use super::history::Entry;
 use super::input::TextInput;
-use super::model::{
-    EditorField, EditorState, FocusRegion, Model, Pending, Placement, SaveState, Screen, Toast,
-    ToastKind, ViewMode,
-};
+use super::model::{FocusRegion, Model, Pending, SaveState, Screen, Toast, ToastKind, ViewMode};
 use crate::animation::AnimationKind;
 use crate::clock::Clock;
 use crate::command::CommandId;
@@ -27,6 +25,7 @@ pub fn update(model: &mut Model, action: Action, clock: Clock) -> Vec<Effect> {
             | Action::JumpToLane(_)
             | Action::GoToLane(_)
             | Action::CancelPrefix
+            | Action::Paste(_)
     );
     // A prefix waits for exactly one more key.
     if key_press {
@@ -66,6 +65,7 @@ impl Updater<'_> {
             Action::JumpToLane(index) => self.jump_to_lane(index),
             Action::GoToLane(letter) => self.go_to_lane(letter),
             Action::CancelPrefix => {}
+            Action::Paste(text) => self.paste(&text),
             Action::Resize(width, height) => {
                 self.model.ui.viewport = (width, height);
                 if !self.model.breakpoint().shows_rail() {
@@ -152,7 +152,8 @@ impl Updater<'_> {
             }
             CommandId::NewTask | CommandId::NewTaskAbove => {
                 let placement = self.placement(id == CommandId::NewTaskAbove);
-                self.push(Screen::Editor(EditorState::new(placement)));
+                let editor = EditorState::new(placement, &self.model.ui.theme);
+                self.push(Screen::Editor(Box::new(editor)));
                 self.animate(AnimationKind::Modal, 180);
             }
             CommandId::QuickAdd => {
@@ -189,8 +190,8 @@ impl Updater<'_> {
             CommandId::MoveTaskDown => self.reorder_task(1),
             CommandId::EditTask => {
                 if let Some(task) = self.target_task().and_then(|id| self.model.board.task(id)) {
-                    let editor = EditorState::from_task(task);
-                    self.push(Screen::Editor(editor));
+                    let editor = EditorState::from_task(task, &self.model.ui.theme);
+                    self.push(Screen::Editor(Box::new(editor)));
                     self.animate(AnimationKind::Modal, 180);
                 }
             }
@@ -268,7 +269,7 @@ impl Updater<'_> {
         } else {
             match self.model.ui.screens.last_mut() {
                 Some(Screen::Editor(editor)) => {
-                    if editor.active_input().handle_key(key) {
+                    if editor.handle_key(key) {
                         editor.error = None;
                     }
                 }
@@ -277,6 +278,27 @@ impl Updater<'_> {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Pasted text goes into whichever input is being typed in.
+    fn paste(&mut self, text: &str) {
+        if let Some(input) = &mut self.model.ui.search.input {
+            input.insert_str(&text.replace(['\n', '\r'], " "));
+            self.model.ui.search.query = input.value.clone();
+            self.model.reconcile_selection();
+            return;
+        }
+        match self.model.ui.screens.last_mut() {
+            Some(Screen::Editor(editor)) => {
+                if editor.paste(text) {
+                    editor.error = None;
+                }
+            }
+            Some(Screen::QuickAdd { input, .. }) => {
+                input.insert_str(&text.replace(['\n', '\r'], " "));
+            }
+            _ => {}
         }
     }
 
@@ -443,8 +465,8 @@ impl Updater<'_> {
         let Some(Screen::Editor(editor)) = self.model.ui.screens.last() else {
             return;
         };
-        let title = editor.title.value.trim().to_owned();
-        let description = editor.description.value.clone();
+        let title = editor.title_text().trim().to_owned();
+        let description = editor.description_text().trim_end().to_owned();
         let task_id = editor.task_id;
         if title.is_empty() {
             self.set_editor_error("Title cannot be empty");

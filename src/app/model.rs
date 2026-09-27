@@ -8,6 +8,7 @@
 use std::time::Instant;
 use uuid::Uuid;
 
+use super::editor::EditorState;
 use super::history::History;
 use super::input::TextInput;
 use crate::animation::{AnimationEngine, AnimationSettings};
@@ -37,64 +38,6 @@ pub enum FocusRegion {
     Cards,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EditorField {
-    Title,
-    Description,
-}
-
-/// Where a new task goes: next to `anchor` (below it, or above it when
-/// `above` is set), or at the end of `column` (the start, when `above`)
-/// if there is no anchor or it has gone.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Placement {
-    pub column: usize,
-    pub anchor: Option<Uuid>,
-    pub above: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct EditorState {
-    pub task_id: Option<Uuid>,
-    /// Where a new task goes. Unused when editing.
-    pub placement: Option<Placement>,
-    pub title: TextInput,
-    pub description: TextInput,
-    pub field: EditorField,
-    pub error: Option<String>,
-}
-
-impl EditorState {
-    pub fn new(placement: Placement) -> Self {
-        Self {
-            task_id: None,
-            placement: Some(placement),
-            title: TextInput::new(String::new()),
-            description: TextInput::new(String::new()),
-            field: EditorField::Title,
-            error: None,
-        }
-    }
-
-    pub fn from_task(task: &Task) -> Self {
-        Self {
-            task_id: Some(task.id),
-            placement: None,
-            title: TextInput::new(task.title.clone()),
-            description: TextInput::new(task.description.clone()),
-            field: EditorField::Title,
-            error: None,
-        }
-    }
-
-    pub fn active_input(&mut self) -> &mut TextInput {
-        match self.field {
-            EditorField::Title => &mut self.title,
-            EditorField::Description => &mut self.description,
-        }
-    }
-}
-
 /// A screen or overlay above the board. The top of the stack gets input
 /// first, and Esc pops it, returning to whatever is underneath.
 #[derive(Clone, Debug)]
@@ -103,7 +46,7 @@ pub enum Screen {
         task: Uuid,
         scroll: u16,
     },
-    Editor(EditorState),
+    Editor(Box<EditorState>),
     ConfirmDelete {
         task: Uuid,
     },
