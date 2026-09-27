@@ -401,6 +401,30 @@ mod tests {
     }
 
     #[test]
+    fn cancelling_a_changed_draft_asks_first() {
+        // #23: Esc and Ctrl+C used to throw a draft away without asking.
+        let (_directory, mut app) = test_app();
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        // An untouched draft closes straight away.
+        press(&mut app, &[KeyCode::Char('n'), KeyCode::Esc]);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Half-written");
+        app.handle_key(ctrl_c, clock());
+        assert!(!app.should_quit());
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmDiscard)));
+        // n keeps editing, with the draft intact.
+        press(&mut app, &[KeyCode::Char('n')]);
+        match top_screen(&app) {
+            Some(Screen::Editor(editor)) => assert_eq!(editor.title_text(), "Half-written"),
+            other => panic!("expected the editor, got {other:?}"),
+        }
+        press(&mut app, &[KeyCode::Esc, KeyCode::Char('y')]);
+        assert!(app.model.ui.screens.is_empty());
+        assert_eq!(app.model.board.task_count(), 0);
+    }
+
+    #[test]
     fn empty_title_keeps_the_editor_open() {
         let (_directory, mut app) = test_app();
         press(&mut app, &[KeyCode::Char('n'), KeyCode::Enter]);

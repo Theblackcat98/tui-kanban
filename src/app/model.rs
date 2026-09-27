@@ -65,6 +65,8 @@ pub enum Screen {
         column: usize,
         input: TextInput,
     },
+    /// "Discard changes?", above the editor.
+    ConfirmDiscard,
 }
 
 /// A prefix key waiting for the key that completes it, as the `g` in
@@ -232,6 +234,7 @@ impl Model {
             Some(Screen::Help { .. }) => Context::Help,
             Some(Screen::MoveTo { .. }) => Context::MoveTo,
             Some(Screen::QuickAdd { .. }) => Context::QuickAdd,
+            Some(Screen::ConfirmDiscard) => Context::Discard,
             Some(Screen::ConfirmDelete { .. }) => Context::Confirm,
             Some(Screen::Editor(_)) => Context::Editor,
             Some(Screen::Detail { .. }) => Context::Detail,

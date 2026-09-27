@@ -526,3 +526,13 @@ fn help_for_the_detail_drawer() {
     harness.keys(&[KeyCode::Enter, KeyCode::Char('?')]);
     screen_snapshot!("help_detail_100x30", harness, 100, 30);
 }
+
+#[test]
+fn discard_confirmation() {
+    let mut harness = Harness::new(typical_board());
+    harness
+        .keys(&[KeyCode::Char('e'), KeyCode::End])
+        .type_text(" now")
+        .keys(&[KeyCode::Esc]);
+    screen_snapshot!("confirm_discard_100x30", harness, 100, 30);
+}

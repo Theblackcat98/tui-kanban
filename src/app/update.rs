@@ -238,9 +238,23 @@ impl Updater<'_> {
             }
             CommandId::SaveTask => self.save_editor(),
             CommandId::CancelEdit => {
-                self.pop();
-                self.animate(AnimationKind::Modal, 140);
+                let dirty = matches!(
+                    self.model.ui.screens.last(),
+                    Some(Screen::Editor(editor)) if editor.is_dirty()
+                );
+                if dirty {
+                    self.push(Screen::ConfirmDiscard);
+                    self.animate(AnimationKind::Modal, 140);
+                } else {
+                    self.pop();
+                }
             }
+            CommandId::DiscardChanges => {
+                // The dialog, then the editor under it.
+                self.pop();
+                self.pop();
+            }
+            CommandId::KeepEditing => self.pop(),
             CommandId::ConfirmDelete => {
                 if let Some(&Screen::ConfirmDelete { task }) = self.model.ui.screens.last() {
                     self.delete_task(task);

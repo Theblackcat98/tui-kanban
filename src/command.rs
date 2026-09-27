@@ -28,10 +28,12 @@ pub enum Context {
     MoveTo = 1 << 9,
     /// The quick-add prompt.
     QuickAdd = 1 << 10,
+    /// "Discard changes?" after cancelling a changed draft.
+    Discard = 1 << 11,
 }
 
 impl Context {
-    pub const ALL: [Context; 11] = [
+    pub const ALL: [Context; 12] = [
         Context::Board,
         Context::AllTasks,
         Context::Rail,
@@ -43,6 +45,7 @@ impl Context {
         Context::TooSmall,
         Context::MoveTo,
         Context::QuickAdd,
+        Context::Discard,
     ];
 
     /// The name shown in the status line's mode pill and help's title.
@@ -59,6 +62,7 @@ impl Context {
             Self::TooSmall => "",
             Self::MoveTo => "MOVE",
             Self::QuickAdd => "ADD",
+            Self::Discard => "DISCARD",
         }
     }
 
@@ -76,6 +80,7 @@ impl Context {
             Self::TooSmall => "",
             Self::MoveTo => "Move to",
             Self::QuickAdd => "Quick add",
+            Self::Discard => "Discard changes",
         }
     }
 }
@@ -108,8 +113,8 @@ const fn only(context: Context) -> Contexts {
     Contexts(context as u32)
 }
 
-const fn except(context: Context) -> Contexts {
-    Contexts(!(context as u32))
+const fn except(contexts: &[Context]) -> Contexts {
+    Contexts(!Contexts::of(contexts).0)
 }
 
 const DIGITS: [Key; 9] = [
@@ -206,6 +211,8 @@ pub enum CommandId {
     CancelEdit,
     ConfirmDelete,
     CancelDelete,
+    DiscardChanges,
+    KeepEditing,
     MenuUp,
     MenuDown,
     MenuPick,
@@ -802,7 +809,7 @@ pub const COMMANDS: &[Command] = &[
     .hint(1, "save"),
     Command::new(
         C::CancelEdit,
-        &[key(KeyCode::Esc)],
+        &[key(KeyCode::Esc), ctrl('c')],
         "editor: cancel",
         G::Editing,
         only(Context::Editor),
@@ -824,6 +831,22 @@ pub const COMMANDS: &[Command] = &[
         only(Context::Confirm),
     )
     .hint(2, "cancel"),
+    Command::new(
+        C::DiscardChanges,
+        &[ch('y')],
+        "discard: confirm",
+        G::Editing,
+        only(Context::Discard),
+    )
+    .hint(1, "discard"),
+    Command::new(
+        C::KeepEditing,
+        &[ch('n'), key(KeyCode::Esc), ch('q')],
+        "discard: keep editing",
+        G::Editing,
+        only(Context::Discard),
+    )
+    .hint(2, "keep editing"),
     Command::new(
         C::MenuDown,
         &[ch('j'), key(KeyCode::Down)],
@@ -927,7 +950,8 @@ pub const COMMANDS: &[Command] = &[
         &[ctrl('c')],
         "quit (anywhere)",
         G::General,
-        except(Context::QuickAdd),
+        // Ctrl+C cancels typing rather than losing it.
+        except(&[Context::QuickAdd, Context::Editor]),
     ),
 ];
 
@@ -1039,6 +1063,7 @@ mod tests {
         for context in Context::ALL {
             let expected = match context {
                 Context::QuickAdd => C::CloseQuickAdd,
+                Context::Editor => C::CancelEdit,
                 _ => C::ForceQuit,
             };
             assert_eq!(lookup(context, &ctrl_c), Some(expected));

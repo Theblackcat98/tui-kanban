@@ -64,6 +64,7 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
                 help::render(frame, area, model, *scroll, *context, clock)
             }
             Screen::ConfirmDelete { task } => confirm::render(frame, area, model, *task, clock),
+            Screen::ConfirmDiscard => confirm::render_discard(frame, area, model, clock),
             Screen::MoveTo { task, selected } => {
                 menu::render(frame, area, model, *task, *selected, clock)
             }

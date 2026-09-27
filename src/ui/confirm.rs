@@ -1,4 +1,5 @@
-//! The delete confirmation dialog.
+//! Confirmation dialogs: deleting a task, and discarding an edited
+//! draft.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -15,10 +16,60 @@ use crate::clock::Clock;
 use crate::command::Context;
 
 pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, task: Uuid, clock: Clock) {
+    let title = model
+        .board
+        .task(task)
+        .map(|task| task.title.as_str())
+        .unwrap_or("this task");
+    let question = |width: usize| {
+        format!(
+            "Delete \"{}\"?",
+            truncate_text(title, width.saturating_sub(10))
+        )
+    };
+    dialog(
+        frame,
+        area,
+        model,
+        "Delete task",
+        &question,
+        "You can undo this with u.",
+        Context::Confirm,
+        clock,
+    );
+}
+
+/// "Discard changes?", when an edited draft is cancelled.
+pub(crate) fn render_discard(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
+    dialog(
+        frame,
+        area,
+        model,
+        "Discard changes",
+        &|_| "Discard your changes?".to_owned(),
+        "They can't be undone.",
+        Context::Discard,
+        clock,
+    );
+}
+
+/// A small dialog with a `danger` border: a question sized to the
+/// dialog's width, a line of detail, and the context's keys.
+#[allow(clippy::too_many_arguments)]
+fn dialog(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    title: &str,
+    question: &dyn Fn(usize) -> String,
+    detail: &str,
+    context: Context,
+    clock: Clock,
+) {
     let theme = &model.ui.theme;
     let modal = centered_rect(area, 52, 8);
     frame.render_widget(Clear, modal);
-    let block = overlay_block(model, "Delete task", theme.danger);
+    let block = overlay_block(model, title, theme.danger);
     let inner = block.inner(modal);
     frame.render_widget(block, modal);
     let inner = Rect::new(
@@ -27,23 +78,14 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, task: Uui
         inner.width.saturating_sub(4),
         inner.height.saturating_sub(2),
     );
-    let title = model
-        .board
-        .task(task)
-        .map(|task| task.title.as_str())
-        .unwrap_or("this task");
-    let question = format!(
-        "Delete \"{}\"?",
-        truncate_text(title, (inner.width as usize).saturating_sub(10))
-    );
     let lines = [
         Line::from(Span::styled(
-            question,
+            question(inner.width as usize),
             fg(theme.text).add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled("You can undo this with u.", muted(model))),
+        Line::from(Span::styled(detail.to_owned(), muted(model))),
         Line::default(),
-        hint_line(model, Context::Confirm, inner.width as usize),
+        hint_line(model, context, inner.width as usize),
     ];
     for (row, line) in lines.into_iter().enumerate() {
         if row as u16 >= inner.height {
