@@ -81,12 +81,79 @@ impl Updater<'_> {
                 }
             }
             Action::Tick => self.tick(),
-            Action::SaveFinished(Ok(())) => self.model.session.save_state = SaveState::Saved,
-            Action::SaveFinished(Err(message)) => {
-                self.toast(format!("Could not save: {message}"), ToastKind::Error, None);
-                self.model.session.save_state = SaveState::Failed(message);
+            Action::SaveFinished { revision, result } => self.save_finished(revision, result),
+            Action::Conflict => {
+                self.model.session.save_state = SaveState::Conflict;
+                if !matches!(self.model.ui.screens.last(), Some(Screen::Conflict)) {
+                    self.push(Screen::Conflict);
+                    self.animate(AnimationKind::Modal, 140);
+                }
+            }
+            Action::Reloaded(board) => self.reload(board),
+            Action::ReloadFailed(message) => self.toast(
+                format!("Could not load the changed board: {message}"),
+                ToastKind::Error,
+                None,
+            ),
+            Action::FinishQuit => {
+                if self.model.session.save_state == SaveState::Saved {
+                    self.effects.push(Effect::Exit);
+                } else if !matches!(self.model.ui.screens.last(), Some(Screen::ConfirmQuit)) {
+                    self.push(Screen::ConfirmQuit);
+                    self.animate(AnimationKind::Modal, 140);
+                }
             }
         }
+    }
+
+    fn save_finished(&mut self, revision: u64, result: Result<(), String>) {
+        let session = &mut self.model.session;
+        match result {
+            // A newer change is still to be saved.
+            Ok(()) if revision != session.revision => {}
+            Ok(()) => session.save_state = SaveState::Saved,
+            Err(message) => {
+                // Failed saves are retried; say so once, not every time.
+                let repeated = session.save_state == SaveState::Failed(message.clone());
+                session.save_state = SaveState::Failed(message.clone());
+                if !repeated {
+                    self.toast(
+                        format!("Could not save (retrying): {message}"),
+                        ToastKind::Error,
+                        None,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Replaces the board with the version on disk. The change can be
+    /// undone, which brings back the board as it was here.
+    fn reload(&mut self, board: Board) {
+        if board != self.model.board {
+            let previous = std::mem::replace(&mut self.model.board, board);
+            self.model.session.history.record(Entry {
+                board: previous,
+                label: "reload from disk".to_owned(),
+                selected: self.model.ui.selected,
+            });
+        }
+        self.model.session.save_state = SaveState::Saved;
+        let board = &self.model.board;
+        self.model.ui.screens.retain(|screen| match screen {
+            Screen::Conflict | Screen::ConfirmQuit => false,
+            Screen::Detail { task, .. }
+            | Screen::ConfirmDelete { task }
+            | Screen::MoveTo { task, .. } => board.task(*task).is_some(),
+            _ => true,
+        });
+        self.model.reconcile_selection();
+        self.toast(
+            "Reloaded: the board changed on disk",
+            ToastKind::Info,
+            Duration::from_secs(3),
+        );
+        self.animate(AnimationKind::CardMove, 220);
     }
 
     fn tick(&mut self) {
@@ -321,6 +388,21 @@ impl Updater<'_> {
                 self.push(Screen::Help { scroll: 0, context });
                 self.animate(AnimationKind::Modal, 180);
                 self.dismiss_tip();
+            }
+            CommandId::ReloadFromDisk => self.effects.push(Effect::Reload),
+            CommandId::KeepMine => {
+                self.pop();
+                self.model.session.save_state = SaveState::Saving;
+                self.effects.push(Effect::Overwrite);
+            }
+            CommandId::DecideLater | CommandId::KeepOpen => self.pop(),
+            CommandId::QuitWithoutSaving => self.effects.push(Effect::Exit),
+            // Ctrl+C at "quit without saving?" means yes, as does q when
+            // the terminal is too small to show the question.
+            CommandId::Quit | CommandId::ForceQuit
+                if matches!(self.model.ui.screens.last(), Some(Screen::ConfirmQuit)) =>
+            {
+                self.effects.push(Effect::Exit)
             }
             CommandId::Quit | CommandId::ForceQuit => self.effects.push(Effect::Quit),
         }
@@ -657,8 +739,15 @@ impl Updater<'_> {
             label,
             selected: self.model.ui.selected,
         });
-        self.effects.push(Effect::Save);
+        self.save();
         Ok(value)
+    }
+
+    /// Marks the board unsaved and asks the runtime to save it.
+    fn save(&mut self) {
+        self.model.session.revision += 1;
+        self.model.session.save_state = SaveState::Saving;
+        self.effects.push(Effect::Save);
     }
 
     fn current_entry(&self) -> Entry {
@@ -695,7 +784,7 @@ impl Updater<'_> {
         }
         self.model.ui.selected = entry.selected;
         self.model.reconcile_selection();
-        self.effects.push(Effect::Save);
+        self.save();
         self.toast(
             format!("{verb}: {}", entry.label),
             ToastKind::Info,

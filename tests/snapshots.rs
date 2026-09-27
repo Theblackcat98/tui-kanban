@@ -10,7 +10,7 @@ use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Duration;
 use tempfile::TempDir;
-use tui_kanban::app::{App, FocusRegion, Toast, ToastKind, ViewMode};
+use tui_kanban::app::{Action, App, FocusRegion, SaveState, Toast, ToastKind, ViewMode};
 use tui_kanban::clock::Clock;
 use tui_kanban::domain::{Board, Column, SCHEMA_VERSION, Task};
 use tui_kanban::storage::JsonStore;
@@ -34,6 +34,7 @@ fn task(n: u128, title: &str, description: &str, age: i64) -> Task {
         description: description.to_owned(),
         created_at: NOW - age - DAY,
         updated_at: NOW - age,
+        extra: Default::default(),
     }
 }
 
@@ -48,6 +49,7 @@ fn board(columns: Vec<Column>) -> Board {
         schema_version: SCHEMA_VERSION,
         name: "Snapshot Board".to_owned(),
         columns,
+        extra: Default::default(),
     }
 }
 
@@ -466,6 +468,7 @@ fn keys_create_a_task_and_move_it() {
         clock(),
     );
     harness.keys(&[KeyCode::Char('L')]);
+    harness.app.flush(clock());
 
     let board = &harness.app.model.board;
     assert_eq!(board.task_count(), 8);
@@ -476,7 +479,7 @@ fn keys_create_a_task_and_move_it() {
     assert_eq!(harness.app.model.selected_task_id(), Some(created.id));
 
     // The change was saved, too.
-    let saved = harness.app.store.load().unwrap().unwrap();
+    let saved = harness.app.store().load().unwrap().unwrap();
     assert_eq!(&saved, board);
     screen_snapshot!("keys_create_and_move_100x30", harness, 100, 30);
 }
@@ -491,7 +494,24 @@ fn keys_delete_after_confirmation() {
         .map(|task| task.title.as_str())
         .collect();
     assert_eq!(titles, ["Write the README", "Package release binaries"]);
+    harness.app.flush(clock());
     screen_snapshot!("keys_delete_100x30", harness, 100, 30);
+}
+
+// Saving (#50, #18, #19)
+
+#[test]
+fn saving_status_and_dialogs() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char('L')]);
+    assert_eq!(harness.app.model.session.save_state, SaveState::Saving);
+    screen_snapshot!("saving_100x30", harness, 100, 30);
+    // Another program changed the file.
+    harness.app.dispatch(Action::Conflict, clock());
+    screen_snapshot!("conflict_100x30", harness, 100, 30);
+    harness.app.dispatch(Action::FinishQuit, clock());
+    screen_snapshot!("confirm_quit_100x30", harness, 100, 30);
+    screen_snapshot!("confirm_quit_60x20", harness, 60, 20);
 }
 
 // Navigation (#45)

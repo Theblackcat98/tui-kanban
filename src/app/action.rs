@@ -8,6 +8,7 @@ use uuid::Uuid;
 use super::editor::EditorField;
 use super::model::{Model, Screen};
 use crate::command::{self, CommandId, Context};
+use crate::domain::Board;
 use crate::tui::event::accepts_key;
 
 #[derive(Clone, Debug)]
@@ -34,8 +35,23 @@ pub enum Action {
     },
     Resize(u16, u16),
     Tick,
-    /// The result of an [`Effect::Save`].
-    SaveFinished(Result<(), String>),
+    /// A save finished. `revision` is the [`Session::revision`] it wrote.
+    ///
+    /// [`Session::revision`]: super::Session::revision
+    SaveFinished {
+        revision: u64,
+        result: Result<(), String>,
+    },
+    /// The board file changed on disk while there were unsaved changes
+    /// here.
+    Conflict,
+    /// The board as another program saved it, read from disk.
+    Reloaded(Board),
+    /// The board file changed on disk but couldn't be loaded.
+    ReloadFailed(String),
+    /// The runtime has saved everything it could after an
+    /// [`Effect::Quit`]: quit, unless something is still unsaved.
+    FinishQuit,
 }
 
 /// Where text edited in `$EDITOR` goes back to.
@@ -51,8 +67,12 @@ pub enum ExternalTarget {
 /// itself stays pure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Effect {
-    /// Write the board to disk.
+    /// The board changed: write it to disk soon, in the background.
     Save,
+    /// Write the board even though the file changed on disk.
+    Overwrite,
+    /// Load the board from disk, replacing the unsaved changes.
+    Reload,
     /// Remember that the first-run tip was dismissed.
     DismissTip,
     /// Suspend the TUI and edit `text` in the user's `$EDITOR`.
@@ -60,7 +80,10 @@ pub enum Effect {
         text: String,
         target: ExternalTarget,
     },
+    /// Finish saving, then report back with [`Action::FinishQuit`].
     Quit,
+    /// Stop the app now.
+    Exit,
 }
 
 /// Turns a key press into an action, using the command table for the
