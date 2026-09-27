@@ -62,6 +62,7 @@ pub(crate) fn render(
         frame,
         rows[0],
         "Title",
+        "Task title",
         &editor.title,
         editor.field == EditorField::Title,
         app,
@@ -70,6 +71,7 @@ pub(crate) fn render(
         frame,
         rows[1],
         "Description",
+        "Add details (optional)",
         &editor.description,
         editor.field == EditorField::Description,
         app,
@@ -98,6 +100,7 @@ fn render_input(
     frame: &mut Frame<'_>,
     area: Rect,
     label: &str,
+    placeholder: &str,
     input: &crate::app::TextInput,
     active: bool,
     app: &App,
@@ -128,7 +131,7 @@ fn render_input(
         return;
     }
     let value = if input.value.is_empty() && !active {
-        "Add a short description"
+        placeholder
     } else {
         &input.value
     };
