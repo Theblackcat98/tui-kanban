@@ -1,5 +1,5 @@
-//! Confirmation dialogs: deleting a task, and discarding an edited
-//! draft.
+//! Confirmation dialogs: deleting a task, discarding an edited draft, a
+//! board that changed on disk, and quitting with unsaved changes.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use super::bars::hint_line;
 use super::text::truncate_text;
 use super::{AnimationKind, centered_rect, fade_in, fg, muted, overlay_block, progress, put};
-use crate::app::Model;
+use crate::app::{Model, SaveState};
 use crate::clock::Clock;
 use crate::command::Context;
 
@@ -53,6 +53,39 @@ pub(crate) fn render_discard(frame: &mut Frame<'_>, area: Rect, model: &Model, c
     );
 }
 
+/// The board file changed on disk while there were unsaved changes here.
+pub(crate) fn render_conflict(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
+    dialog(
+        frame,
+        area,
+        model,
+        "Changed on disk",
+        &|_| "Another program changed the board.".to_owned(),
+        "Load it (u undoes), or keep your version.",
+        Context::Conflict,
+        clock,
+    );
+}
+
+/// "Quit without saving?", with why the changes aren't saved.
+pub(crate) fn render_quit(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
+    let reason = match &model.session.save_state {
+        SaveState::Failed(message) => format!("Saving failed: {message}"),
+        SaveState::Conflict => "The board changed on disk.".to_owned(),
+        SaveState::Saving | SaveState::Saved => "Saving is taking too long.".to_owned(),
+    };
+    dialog(
+        frame,
+        area,
+        model,
+        "Quit",
+        &|_| "Your changes aren't saved. Quit anyway?".to_owned(),
+        &reason,
+        Context::ConfirmQuit,
+        clock,
+    );
+}
+
 /// A small dialog with a `danger` border: a question sized to the
 /// dialog's width, a line of detail, and the context's keys.
 #[allow(clippy::too_many_arguments)]
@@ -83,7 +116,10 @@ fn dialog(
             question(inner.width as usize),
             fg(theme.text).add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(detail.to_owned(), muted(model))),
+        Line::from(Span::styled(
+            truncate_text(detail, inner.width as usize),
+            muted(model),
+        )),
         Line::default(),
         hint_line(model, context, inner.width as usize),
     ];

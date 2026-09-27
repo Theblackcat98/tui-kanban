@@ -4,7 +4,8 @@
 //! Event (key, resize, tick)
 //!   → keymap(&Model, key) -> Action        (action.rs, via the command table)
 //!   → update(&mut Model, Action) -> Effects (update.rs, pure)
-//!   → the runtime runs the effects          (this file: save, quit)
+//!   → the runtime runs the effects          (this file: quit, $EDITOR;
+//!                                            persist.rs: saving, reloading)
 //!   → ui::render(&Model, Clock)             (pure)
 //! ```
 
@@ -14,6 +15,7 @@ mod history;
 mod input;
 mod model;
 mod palette;
+mod persist;
 mod update;
 
 pub use action::{Action, Effect, ExternalTarget, keymap};
@@ -27,9 +29,10 @@ pub use model::{
 pub use palette::{
     Entry as PaletteEntry, Palette, Target as PaletteTarget, entries as palette_entries,
 };
+pub use persist::{RETRY_FIRST, RETRY_MAX, SAVE_DELAY, SETTLE};
 pub use update::update;
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use clap::Parser;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
@@ -46,6 +49,7 @@ use crate::clock::Clock;
 use crate::storage::JsonStore;
 use crate::theme::{self, Theme, reduce_motion};
 use crate::ui;
+use persist::Persistence;
 
 /// How often the idle event loop wakes to refresh relative times.
 const IDLE_REFRESH: Duration = Duration::from_secs(1);
@@ -65,31 +69,44 @@ pub struct Cli {
     pub no_animation: bool,
 }
 
-/// The runtime: the model plus the store it is saved to. It turns events
-/// into actions, runs [`update`], and carries out the effects.
+/// The runtime: the model plus where it is saved. It turns events into
+/// actions, runs [`update`], and carries out the effects.
 pub struct App {
     pub model: Model,
-    pub store: JsonStore,
+    persistence: Persistence,
     /// Created when the first-run tip is dismissed, so it stays dismissed.
     /// Without one, the tip isn't shown.
     tip_marker: Option<PathBuf>,
     /// Text waiting to be edited in `$EDITOR`, which needs the terminal.
     external_edit: Option<(String, ExternalTarget)>,
     quit: bool,
+    /// Whether the user chose to quit without saving.
+    discarded: bool,
 }
 
 impl App {
     pub fn new(store: JsonStore, theme: Theme, animations_enabled: bool) -> Result<Self> {
-        let board = store
-            .load_or_default()
-            .with_context(|| format!("could not load {}", store.path().display()))?;
+        let path = store.path().to_owned();
+        let (persistence, board) = Persistence::open(store)
+            .with_context(|| format!("could not load {}", path.display()))?;
         Ok(Self {
             model: Model::new(board, theme, animations_enabled),
-            store,
+            persistence,
             tip_marker: None,
             external_edit: None,
             quit: false,
+            discarded: false,
         })
+    }
+
+    pub fn store(&self) -> &JsonStore {
+        self.persistence.store()
+    }
+
+    /// Watches the board file, loading changes other programs make.
+    pub fn watch_board(mut self) -> Self {
+        self.persistence.watch();
+        self
     }
 
     /// Shows the first-run tip unless `marker` exists, and creates it when
@@ -114,22 +131,56 @@ impl App {
         self.dispatch(Action::Tick, clock);
     }
 
-    /// Runs an action through `update`, then carries out its effects. A
-    /// save's result is fed back in as another action.
+    /// Catches up with saving: takes in finished saves, loads the file if
+    /// another program changed it, and starts a save that is due. Returns
+    /// whether anything changed that needs a redraw.
+    pub fn poll_saving(&mut self, clock: Clock) -> bool {
+        let finished = self.persistence.finished(clock.instant);
+        let mut changed = !finished.is_empty();
+        for action in finished {
+            self.dispatch(action, clock);
+        }
+        // After the finished saves, so the save state is current.
+        let checked = self.persistence.check_disk(&self.model, clock.instant);
+        let failed = self.persistence.submit_due(&self.model, clock.instant);
+        for action in checked.into_iter().chain(failed) {
+            changed = true;
+            self.dispatch(action, clock);
+        }
+        changed
+    }
+
+    /// Looks at the board file at the next [`App::poll_saving`] after
+    /// [`SETTLE`], as when the watcher sees it change.
+    pub fn notice_disk_change(&mut self, clock: Clock) {
+        self.persistence.notice_change(clock.instant);
+    }
+
+    /// Waits until every change is saved, or has failed to save.
+    pub fn flush(&mut self, clock: Clock) {
+        for action in self.persistence.flush(&self.model, clock.instant) {
+            self.dispatch(action, clock);
+        }
+    }
+
+    /// Runs an action through `update`, then carries out its effects.
+    /// Actions that come out of effects are run the same way.
     pub fn dispatch(&mut self, action: Action, clock: Clock) {
         let mut queue = VecDeque::from([action]);
         while let Some(action) = queue.pop_front() {
             for effect in update(&mut self.model, action, clock) {
                 match effect {
-                    Effect::Save => {
-                        let result = self
-                            .store
-                            .save(&self.model.board)
-                            .map(|_| ())
-                            .map_err(|error| error.to_string());
-                        queue.push_back(Action::SaveFinished(result));
+                    Effect::Save => self.persistence.request_save(clock.instant),
+                    Effect::Overwrite => self.persistence.overwrite(clock.instant),
+                    Effect::Reload => queue.push_back(self.persistence.reload()),
+                    Effect::Quit => {
+                        queue.extend(self.persistence.flush(&self.model, clock.instant));
+                        queue.push_back(Action::FinishQuit);
                     }
-                    Effect::Quit => self.quit = true,
+                    Effect::Exit => {
+                        self.quit = true;
+                        self.discarded = self.model.session.save_state != SaveState::Saved;
+                    }
                     Effect::EditExternally { text, target } => {
                         self.external_edit = Some((text, target));
                     }
@@ -157,18 +208,25 @@ impl App {
         self.quit
     }
 
-    /// Before exiting, tries once more to save a board whose last save
-    /// failed, and reports the error if that fails too.
+    /// Before exiting, saves anything still unsaved (such as after an
+    /// error in the event loop) and reports changes that couldn't be,
+    /// unless the user chose to quit without saving.
     pub fn finish(&mut self) -> Result<()> {
-        if let SaveState::Failed(_) = self.model.session.save_state {
-            self.store.save(&self.model.board).with_context(|| {
-                format!(
-                    "your last changes could not be saved to {}",
-                    self.store.path().display()
-                )
-            })?;
+        if self.discarded {
+            return Ok(());
         }
-        Ok(())
+        self.flush(Clock::now());
+        let path = self.store().path().display();
+        match &self.model.session.save_state {
+            SaveState::Saved => Ok(()),
+            SaveState::Saving => bail!("your last changes could not be saved to {path} in time"),
+            SaveState::Failed(message) => {
+                bail!("your last changes could not be saved to {path}: {message}")
+            }
+            SaveState::Conflict => {
+                bail!("{path} changed on disk, so your last changes were not saved")
+            }
+        }
     }
 
     /// How long the event loop may wait for input before it has to redraw:
@@ -178,6 +236,9 @@ impl App {
         let mut timeout = IDLE_REFRESH;
         if let Some(frame) = self.model.ui.animations.next_frame_timeout(now) {
             timeout = timeout.min(frame);
+        }
+        if let Some(saving) = self.persistence.next_timeout(now) {
+            timeout = timeout.min(saving);
         }
         // Wake when a held prefix should show its which-key panel.
         if let Some(pending) = self.model.ui.pending {
@@ -208,7 +269,7 @@ pub fn run() -> Result<()> {
         &theme::Environment::from_env(),
         theme::detect_light_background,
     )?;
-    let mut app = App::new(store, theme, animations)?;
+    let mut app = App::new(store, theme, animations)?.watch_board();
     if let Some(state) = crate::paths::state_dir() {
         app = app.with_tip_marker(state.join("tip-dismissed"));
     }
@@ -254,6 +315,7 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
         // Tick on every iteration, not only when polling times out, so
         // toasts expire and animations finish while keys keep arriving.
         let clock = Clock::now();
+        needs_redraw |= app.poll_saving(clock);
         app.tick(clock);
         if needs_redraw {
             terminal.draw(|frame| ui::render(frame, &app.model, clock))?;
@@ -288,8 +350,8 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
                 _ => {}
             }
         } else {
-            // An animation frame is due, a toast expired, or it is time
-            // for the idle refresh.
+            // An animation frame is due, a toast expired, a save finished,
+            // or it is time for the idle refresh.
             needs_redraw = true;
         }
     }
@@ -299,6 +361,7 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
 mod tests {
     use super::*;
     use crate::animation::{AnimationKind, FRAME_INTERVAL};
+    use crate::domain::Board;
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
     use tempfile::TempDir;
     use uuid::Uuid;
@@ -421,7 +484,8 @@ mod tests {
             "Make it\nbeautiful"
         );
         assert!(app.model.ui.screens.is_empty());
-        assert_eq!(app.store.load().unwrap().unwrap(), app.model.board);
+        app.flush(clock());
+        assert_eq!(app.store().load().unwrap().unwrap(), app.model.board);
     }
 
     #[test]
@@ -819,35 +883,253 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_save_keeps_the_change_and_reports_it() {
-        let directory = tempfile::tempdir().unwrap();
+    fn a_failed_save_keeps_the_change_and_retries() {
+        // #18: a failed save used to throw the change away.
+        let (directory, mut app) = test_app();
         // A directory where the board file should be makes every save fail.
         let path = directory.path().join("board.json");
         std::fs::create_dir(&path).unwrap();
-        let store = JsonStore::new(&path);
-        let mut app = App {
-            model: Model::new(Default::default(), Theme::mocha(), false),
-            store,
-            tip_marker: None,
-            external_edit: None,
-            quit: false,
-        };
-        app.resize(100, 30);
         press(&mut app, &[KeyCode::Char('n')]);
         type_text(&mut app, "Unsaved");
         press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.session.save_state, SaveState::Saving);
+        app.flush(clock());
         assert_eq!(app.model.board.task_count(), 1);
         assert!(matches!(app.model.session.save_state, SaveState::Failed(_)));
         assert_eq!(
             app.model.session.toast.as_ref().map(|toast| toast.kind),
             Some(ToastKind::Error)
         );
-        assert!(app.finish().is_err());
         // The error stays up until the next key press.
         app.tick(clock().advance(Duration::from_secs(60)));
         assert!(app.model.session.toast.is_some());
         press(&mut app, &[KeyCode::Char('j')]);
         assert!(app.model.session.toast.is_none());
+        // Quitting asks first, and finish() reports the lost change.
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(!app.should_quit());
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmQuit)));
+        assert!(app.finish().is_err());
+        press(&mut app, &[KeyCode::Char('n')]);
+        assert!(app.model.ui.screens.is_empty());
+
+        // Once the problem is fixed, the retry saves the change.
+        std::fs::remove_dir(&path).unwrap();
+        let later = clock().advance(RETRY_MAX);
+        app.poll_saving(later);
+        app.flush(later);
+        assert_eq!(app.model.session.save_state, SaveState::Saved);
+        assert_eq!(app.store().load().unwrap().unwrap(), app.model.board);
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(app.should_quit());
+        assert!(app.finish().is_ok());
+    }
+
+    #[test]
+    fn changes_are_saved_in_the_background_after_a_short_delay() {
+        let (_directory, mut app) = test_app();
+        let start = clock();
+        press(&mut app, &[KeyCode::Char('a')]);
+        type_text(&mut app, "One");
+        app.handle_key(key(KeyCode::Enter), start);
+        type_text(&mut app, "Two");
+        app.handle_key(key(KeyCode::Enter), start);
+        assert_eq!(app.model.session.save_state, SaveState::Saving);
+        assert_eq!(app.next_timeout(start.instant), SAVE_DELAY);
+        // Not yet due: nothing is written.
+        app.poll_saving(start);
+        assert!(app.store().load().unwrap().is_none());
+        // Both changes are written in one save.
+        app.poll_saving(start.advance(SAVE_DELAY));
+        app.flush(start.advance(SAVE_DELAY));
+        assert_eq!(app.model.session.save_state, SaveState::Saved);
+        assert_eq!(app.store().load().unwrap().unwrap().task_count(), 2);
+        assert_eq!(app.next_timeout(start.instant), IDLE_REFRESH);
+    }
+
+    #[test]
+    fn a_save_of_an_older_change_leaves_the_newer_one_unsaved() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Task");
+        press(&mut app, &[KeyCode::Char('J')]);
+        let revision = app.model.session.revision;
+        press(&mut app, &[KeyCode::Char('L')]);
+        let finished = |revision| Action::SaveFinished {
+            revision,
+            result: Ok(()),
+        };
+        app.dispatch(finished(revision), clock());
+        assert_eq!(app.model.session.save_state, SaveState::Saving);
+        app.dispatch(finished(revision + 1), clock());
+        assert_eq!(app.model.session.save_state, SaveState::Saved);
+    }
+
+    #[test]
+    fn quitting_saves_pending_changes_first() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char('a')]);
+        type_text(&mut app, "Last-second change");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::Esc, KeyCode::Char('q')],
+        );
+        assert!(app.should_quit());
+        assert!(app.finish().is_ok());
+        assert_eq!(app.store().load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn a_tiny_terminal_can_still_quit_with_unsaved_changes() {
+        let (directory, mut app) = test_app();
+        std::fs::create_dir(directory.path().join("board.json")).unwrap();
+        add(&mut app, 0, "Unsaved");
+        press(&mut app, &[KeyCode::Char('L')]);
+        app.resize(30, 8);
+        // The question can't be shown, so a second q answers it.
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(!app.should_quit());
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(app.should_quit());
+    }
+
+    /// Writes `board`, with one task renamed, as another program would.
+    fn edit_on_disk(app: &App, title: &str) -> Board {
+        let mut board = app.store().load().unwrap().unwrap();
+        let id = board.columns[0].tasks[0].id;
+        board.update_task(id, title, "", 1).unwrap();
+        std::fs::write(
+            app.store().path(),
+            serde_json::to_string_pretty(&board).unwrap(),
+        )
+        .unwrap();
+        board
+    }
+
+    fn saved_app() -> (TempDir, App, Uuid) {
+        let (directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Mine");
+        app.store().save(&app.model.board).unwrap();
+        // Start from the file as saved.
+        let mut app = App::new(app.store().clone(), Theme::mocha(), false).unwrap();
+        app.resize(100, 30);
+        (directory, app, id)
+    }
+
+    #[test]
+    fn changes_on_disk_are_loaded_when_nothing_is_unsaved() {
+        let (_directory, mut app, id) = saved_app();
+        press(&mut app, &[KeyCode::Char('v')]);
+        let theirs = edit_on_disk(&app, "Theirs");
+        app.notice_disk_change(clock());
+        // The file is read once it has settled.
+        assert!(!app.poll_saving(clock()));
+        assert!(app.poll_saving(clock().advance(SETTLE)));
+        assert_eq!(app.model.board, theirs);
+        assert_eq!(app.model.selected_task_id(), Some(id));
+        assert_eq!(app.model.ui.view, ViewMode::AllTasks);
+        assert_eq!(app.model.session.save_state, SaveState::Saved);
+        assert_eq!(toast_message(&app), "Reloaded: the board changed on disk");
+        // Our own saves aren't reloaded.
+        press(&mut app, &[KeyCode::Char('u')]);
+        app.flush(clock());
+        app.notice_disk_change(clock());
+        assert!(!app.poll_saving(clock().advance(SETTLE)));
+        assert_eq!(app.model.board.task(id).unwrap().title, "Mine");
+    }
+
+    #[test]
+    fn an_unreadable_change_on_disk_is_reported_once() {
+        let (_directory, mut app, _) = saved_app();
+        let board = app.model.board.clone();
+        std::fs::write(app.store().path(), "<<<<<<< HEAD").unwrap();
+        app.notice_disk_change(clock());
+        assert!(app.poll_saving(clock().advance(SETTLE)));
+        assert!(toast_message(&app).starts_with("Could not load the changed board"));
+        assert_eq!(app.model.board, board);
+        press(&mut app, &[KeyCode::Esc]);
+        app.notice_disk_change(clock());
+        assert!(!app.poll_saving(clock().advance(SETTLE)));
+    }
+
+    #[test]
+    fn a_change_on_disk_with_unsaved_changes_here_asks_which_to_keep() {
+        // #19: the last writer used to win silently.
+        let (_directory, mut app, id) = saved_app();
+        press(&mut app, &[KeyCode::Char('L')]);
+        edit_on_disk(&app, "Theirs");
+        app.notice_disk_change(clock());
+        app.poll_saving(clock().advance(SETTLE));
+        assert_eq!(app.model.session.save_state, SaveState::Conflict);
+        assert!(matches!(top_screen(&app), Some(Screen::Conflict)));
+        // Esc decides later; nothing is written meanwhile.
+        press(&mut app, &[KeyCode::Esc]);
+        assert!(app.model.ui.screens.is_empty());
+        app.flush(clock());
+        assert_eq!(
+            app.store().load().unwrap().unwrap().columns[0].tasks[0].title,
+            "Theirs"
+        );
+        // The next change asks again; "o" keeps ours.
+        press(&mut app, &[KeyCode::Char('H')]);
+        app.poll_saving(clock().advance(SAVE_DELAY));
+        app.flush(clock());
+        assert!(matches!(top_screen(&app), Some(Screen::Conflict)));
+        press(&mut app, &[KeyCode::Char('o')]);
+        app.flush(clock());
+        assert_eq!(app.model.session.save_state, SaveState::Saved);
+        let saved = app.store().load().unwrap().unwrap();
+        assert_eq!(saved, app.model.board);
+        assert_eq!(saved.task(id).unwrap().title, "Mine");
+        assert_eq!(saved.task_location(id), Some((0, 0)));
+    }
+
+    #[test]
+    fn two_instances_on_one_file_do_not_overwrite_each_other() {
+        let (_directory, mut first, id) = saved_app();
+        let mut second = App::new(first.store().clone(), Theme::mocha(), false).unwrap();
+        second.resize(100, 30);
+        press(&mut first, &[KeyCode::Char('L')]);
+        first.poll_saving(clock().advance(SAVE_DELAY));
+        first.flush(clock());
+        press(&mut second, &[KeyCode::Char('d'), KeyCode::Char('y')]);
+        second.poll_saving(clock().advance(SAVE_DELAY));
+        second.flush(clock());
+        assert!(matches!(top_screen(&second), Some(Screen::Conflict)));
+        // "r" loads the first instance's board; u brings this one's back.
+        press(&mut second, &[KeyCode::Char('r')]);
+        assert_eq!(second.model.board, first.model.board);
+        assert_eq!(second.model.board.task_location(id), Some((1, 0)));
+        assert!(second.model.ui.screens.is_empty());
+        assert_eq!(second.model.session.save_state, SaveState::Saved);
+        press(&mut second, &[KeyCode::Char('u')]);
+        assert_eq!(second.model.board.task_count(), 0);
+    }
+
+    #[test]
+    fn quitting_with_a_conflict_asks_and_leaves_the_file_alone() {
+        let (_directory, mut app, _) = saved_app();
+        press(&mut app, &[KeyCode::Char('L')]);
+        let theirs = edit_on_disk(&app, "Theirs");
+        press(&mut app, &[KeyCode::Char('q')]);
+        // Quitting saves first, which finds the conflict, so it asks,
+        // above the choice between the two versions.
+        assert!(!app.should_quit());
+        assert!(matches!(
+            app.model.ui.screens.as_slice(),
+            [Screen::Conflict, Screen::ConfirmQuit]
+        ));
+        press(&mut app, &[KeyCode::Char('n')]);
+        assert!(matches!(top_screen(&app), Some(Screen::Conflict)));
+        press(&mut app, &[KeyCode::Esc, KeyCode::Char('q')]);
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmQuit)));
+        // Ctrl+C a second time quits, too.
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert!(app.should_quit());
+        assert!(app.finish().is_ok());
+        assert_eq!(app.store().load().unwrap().unwrap(), theirs);
     }
 
     /// Adds `count` tasks to the first column, each with a description.
@@ -968,7 +1250,8 @@ mod tests {
         assert_eq!(app.model.selected_task_id(), Some(doomed));
         assert_eq!(toast_message(&app), "Undid: delete 'Doomed'");
         // The undo was saved, too.
-        assert_eq!(app.store.load().unwrap().unwrap(), app.model.board);
+        app.flush(clock());
+        assert_eq!(app.store().load().unwrap().unwrap(), app.model.board);
     }
 
     #[test]

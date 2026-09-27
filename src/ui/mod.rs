@@ -74,6 +74,8 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
             }
             Screen::ConfirmDelete { task } => confirm::render(frame, area, model, *task, clock),
             Screen::ConfirmDiscard => confirm::render_discard(frame, area, model, clock),
+            Screen::Conflict => confirm::render_conflict(frame, area, model, clock),
+            Screen::ConfirmQuit => confirm::render_quit(frame, area, model, clock),
             Screen::Palette(state) => palette::render(frame, area, model, state, clock),
             Screen::MoveTo { task, selected } => {
                 menu::render(frame, area, model, *task, *selected, clock)

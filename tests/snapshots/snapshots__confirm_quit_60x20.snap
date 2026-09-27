@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ Snapshot Board   Board · All tasks
+
+ Backlog 2 · In Progress 3 · Done 2
+ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+
+ ▎ Calmer card style
+ ▎ T╭ Quit ────────────────────────────────────────────╮
+ ▎ ◷│                                                  │
+    │  Your changes aren't saved. Quit anyway?         │
+ ▎ C│  The board changed on disk.                      │
+ ▎ E│                                                  │
+ ▎ ◷│  y quit anyway   n stay                          │
+    │                                                  │
+ ▌ W╰──────────────────────────────────────────────────╯
+ ▌ Cover install, usage, keys and the file format.
+ ▌ ◷ just now
+
+
+
+ QUIT   ✕ changed on disk   y quit anyway   n stay

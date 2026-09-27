@@ -71,6 +71,12 @@ pub enum Screen {
     /// "Discard changes?", above the editor.
     ConfirmDiscard,
     Palette(Palette),
+    /// The board file changed on disk while there were unsaved changes:
+    /// load it, or keep these.
+    Conflict,
+    /// "Quit without saving?", when quitting with changes that couldn't
+    /// be saved.
+    ConfirmQuit,
 }
 
 /// A prefix key waiting for the key that completes it: the `g` in `g g`,
@@ -128,9 +134,14 @@ pub struct Toast {
 pub enum SaveState {
     #[default]
     Saved,
-    /// The last save failed. The change is kept in memory and is saved
-    /// with the next successful save.
+    /// Changes are waiting to be written, or being written.
+    Saving,
+    /// The last save failed. The change is kept in memory, and saving is
+    /// retried until it works.
     Failed(String),
+    /// The board file changed on disk while there were unsaved changes
+    /// here. Nothing is saved until the user picks a version.
+    Conflict,
 }
 
 /// Scroll positions, kept in the model so they survive focus changes and
@@ -191,6 +202,9 @@ pub struct Ui {
 #[derive(Clone, Debug, Default)]
 pub struct Session {
     pub save_state: SaveState,
+    /// Counts board changes, so a finished save can tell whether it wrote
+    /// the latest one.
+    pub revision: u64,
     pub toast: Option<Toast>,
     pub history: History,
     /// Commands recently run from the palette, most recent first.
@@ -250,6 +264,8 @@ impl Model {
             Some(Screen::MoveTo { .. }) => Context::MoveTo,
             Some(Screen::QuickAdd { .. }) => Context::QuickAdd,
             Some(Screen::ConfirmDiscard) => Context::Discard,
+            Some(Screen::Conflict) => Context::Conflict,
+            Some(Screen::ConfirmQuit) => Context::ConfirmQuit,
             Some(Screen::Palette(_)) => Context::Palette,
             Some(Screen::ConfirmDelete { .. }) => Context::Confirm,
             Some(Screen::Editor(_)) => Context::Editor,
@@ -305,7 +321,9 @@ impl Model {
     pub fn status_text(&self) -> String {
         match &self.session.save_state {
             SaveState::Saved => "saved".to_owned(),
+            SaveState::Saving => "saving".to_owned(),
             SaveState::Failed(message) => format!("not saved: {message}"),
+            SaveState::Conflict => "changed on disk".to_owned(),
         }
     }
 

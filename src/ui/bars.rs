@@ -151,7 +151,9 @@ pub(crate) fn render_status(frame: &mut Frame<'_>, area: Rect, model: &Model, cl
     };
     let (icon, icon_color, status) = match model.session.save_state {
         SaveState::Saved => ("●", theme.success, "saved"),
+        SaveState::Saving => ("◌", theme.text_muted, "saving"),
         SaveState::Failed(_) => ("✕", theme.danger, "not saved"),
+        SaveState::Conflict => ("✕", theme.warning, "changed on disk"),
     };
     let mut spans = vec![
         Span::styled(format!(" {} ", context.label()), pill),

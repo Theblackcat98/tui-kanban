@@ -32,10 +32,14 @@ pub enum Context {
     Discard = 1 << 11,
     /// The command palette.
     Palette = 1 << 12,
+    /// "Board changed on disk" while there are unsaved changes.
+    Conflict = 1 << 13,
+    /// "Quit without saving?"
+    ConfirmQuit = 1 << 14,
 }
 
 impl Context {
-    pub const ALL: [Context; 13] = [
+    pub const ALL: [Context; 15] = [
         Context::Board,
         Context::AllTasks,
         Context::Rail,
@@ -49,6 +53,8 @@ impl Context {
         Context::QuickAdd,
         Context::Discard,
         Context::Palette,
+        Context::Conflict,
+        Context::ConfirmQuit,
     ];
 
     /// The name shown in the status line's mode pill and help's title.
@@ -67,6 +73,8 @@ impl Context {
             Self::QuickAdd => "ADD",
             Self::Discard => "DISCARD",
             Self::Palette => "COMMAND",
+            Self::Conflict => "CONFLICT",
+            Self::ConfirmQuit => "QUIT",
         }
     }
 
@@ -86,6 +94,8 @@ impl Context {
             Self::QuickAdd => "Quick add",
             Self::Discard => "Discard changes",
             Self::Palette => "Command palette",
+            Self::Conflict => "Changed on disk",
+            Self::ConfirmQuit => "Quit",
         }
     }
 }
@@ -250,6 +260,11 @@ pub enum CommandId {
     PaletteUp,
     PaletteRun,
     PaletteClose,
+    ReloadFromDisk,
+    KeepMine,
+    DecideLater,
+    QuitWithoutSaving,
+    KeepOpen,
     Quit,
     ForceQuit,
 }
@@ -976,6 +991,46 @@ pub const COMMANDS: &[Command] = &[
         only(Context::Discard),
     )
     .hint(2, "keep editing"),
+    Command::new(
+        C::ReloadFromDisk,
+        &[ch('r')],
+        "changed on disk: load it (u brings yours back)",
+        G::Editing,
+        only(Context::Conflict),
+    )
+    .hint(1, "load it"),
+    Command::new(
+        C::KeepMine,
+        &[ch('o')],
+        "changed on disk: overwrite it with yours",
+        G::Editing,
+        only(Context::Conflict),
+    )
+    .hint(2, "keep mine"),
+    Command::new(
+        C::DecideLater,
+        &[key(KeyCode::Esc)],
+        "changed on disk: decide later",
+        G::Editing,
+        only(Context::Conflict),
+    )
+    .hint(3, "later"),
+    Command::new(
+        C::QuitWithoutSaving,
+        &[ch('y')],
+        "quit: without saving",
+        G::Editing,
+        only(Context::ConfirmQuit),
+    )
+    .hint(1, "quit anyway"),
+    Command::new(
+        C::KeepOpen,
+        &[ch('n'), key(KeyCode::Esc)],
+        "quit: stay",
+        G::Editing,
+        only(Context::ConfirmQuit),
+    )
+    .hint(2, "stay"),
     Command::new(
         C::MenuDown,
         &[ch('j'), key(KeyCode::Down)],

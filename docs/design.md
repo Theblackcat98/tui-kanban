@@ -105,8 +105,11 @@ applying, Ctrl+N/Ctrl+P do.
 ### Status line
 
 `[MODE] ● saved  hints…`. The mode pill names the current context
-(BOARD, ALL TASKS, RAIL, SEARCH, DETAIL, EDIT, HELP, DELETE). The save
-icon is `●` when saved and `✕` when the last save failed. Hints come
+(BOARD, ALL TASKS, RAIL, SEARCH, DETAIL, EDIT, HELP, DELETE, CONFLICT,
+QUIT). The save status is `● saved` (`success`), `◌ saving`
+(`text_muted`) while a change waits to be written, `✕ not saved`
+(`danger`) when the last save failed, or `✕ changed on disk` (`warning`)
+when another program changed the file (see [Saving](#saving)). Hints come
 from the command table, most important first, cut to whole hints that
 fit, and hints for commands that would do nothing (such as "edit" with
 no task selected) are left out. A toast replaces the hints while it
@@ -177,9 +180,9 @@ unticks it, as an undoable change. `E` edits the description in
 
 ### Overlays
 
-Help, the editor, the delete dialog, the "move to…" menu and the
+Help, the editor, the dialogs, the "move to…" menu and the
 quick-add prompt float centred on `panel` with a rounded `border` (the
-delete dialog's border is `danger`, the quick-add prompt's is the lane's
+dialogs' borders are `danger`, the quick-add prompt's is the lane's
 colour). Inputs are `surface` fields; the active one has an accent bar,
 and empty ones show a placeholder. Every overlay's last row lists its
 own keys, generated from the command table.
@@ -250,6 +253,35 @@ opens a "move to…" menu, `J`/`K` reorder within a lane, `n` / `N` add a
 task below / above the selected one, `a` quick-adds to the end of the
 lane from a one-line prompt that stays open for the next task, `y`
 duplicates, and `u` / `U` undo and redo.
+
+## Saving
+
+Changes are written in the background, 150 ms after the first one, so a
+burst of changes is one save and a slow disk never holds up a key. The
+file is replaced atomically.
+
+- **A failed save** keeps the change and is retried after 1 s, then
+  2 s, 4 s and so on up to 30 s. The error shows once, as a toast that
+  stays until the next key; the status stays `✕ not saved` until a
+  retry works.
+- **Another program changes the file** (an editor, `git pull`, a second
+  tui-kanban): when nothing here is unsaved, the new version is loaded,
+  keeping the selection, with a "Reloaded" toast. `u` brings back the
+  board as it was. When something here is unsaved, nothing is written
+  and the **Changed on disk** dialog asks: `r` loads the file (`u`
+  brings your version back), `o` overwrites it with yours, `Esc` decides
+  later (the next change or quitting asks again). Every save checks the
+  file first, so this works even where the file can't be watched.
+- **Quitting** writes anything still waiting. If that fails, **Quit**
+  asks before throwing the changes away: `y` or a second Ctrl+C quits,
+  `n` stays.
+
+The file is pretty-printed JSON with fields in a fixed order, so each
+task is one block and diffs stay small. Fields tui-kanban doesn't know,
+such as ones added by hand or by a newer version, are kept and written
+back after the known ones, sorted by name. A file from an older version
+is copied to `<file>.bak-v<version>` before it is upgraded; one from a
+newer version isn't opened.
 
 ## Motion
 
