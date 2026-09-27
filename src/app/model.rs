@@ -264,7 +264,8 @@ impl Model {
             | CommandId::MoveTaskUp
             | CommandId::MoveTaskDown
             | CommandId::MoveTo
-            | CommandId::DuplicateTask => {
+            | CommandId::DuplicateTask
+            | CommandId::EditExternally => {
                 self.selected_task_id().is_some()
                     || matches!(self.ui.screens.last(), Some(Screen::Detail { .. }))
             }

@@ -3,6 +3,8 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use uuid::Uuid;
+
 use super::editor::EditorField;
 use super::model::{Model, Screen};
 use crate::command::{self, CommandId, Context};
@@ -24,10 +26,25 @@ pub enum Action {
     CancelPrefix,
     /// Text pasted into the terminal (with bracketed paste).
     Paste(String),
+    /// The result of an [`Effect::EditExternally`]: the saved text, or
+    /// why it couldn't be edited.
+    ExternalEditFinished {
+        target: ExternalTarget,
+        result: Result<String, String>,
+    },
     Resize(u16, u16),
     Tick,
     /// The result of an [`Effect::Save`].
     SaveFinished(Result<(), String>),
+}
+
+/// Where text edited in `$EDITOR` goes back to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExternalTarget {
+    /// A task's description, saved straight to the board.
+    Task(Uuid),
+    /// The description field of the open editor.
+    Draft,
 }
 
 /// Work for the runtime, returned by [`super::update`] so that `update`
@@ -38,6 +55,11 @@ pub enum Effect {
     Save,
     /// Remember that the first-run tip was dismissed.
     DismissTip,
+    /// Suspend the TUI and edit `text` in the user's `$EDITOR`.
+    EditExternally {
+        text: String,
+        target: ExternalTarget,
+    },
     Quit,
 }
 

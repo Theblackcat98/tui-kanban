@@ -190,6 +190,8 @@ pub enum CommandId {
     QuickAdd,
     EditTask,
     DuplicateTask,
+    EditExternally,
+    DraftInEditor,
     MoveTo,
     MoveTaskUp,
     MoveTaskDown,
@@ -687,6 +689,13 @@ pub const COMMANDS: &[Command] = &[
     ),
     Command::new(C::MoveTo, &[ch('m')], "move to…", G::Tasks, TASK_ACTIONS),
     Command::new(
+        C::EditExternally,
+        &[ch('E')],
+        "edit description in $EDITOR",
+        G::Tasks,
+        TASK_ACTIONS,
+    ),
+    Command::new(
         C::DeleteTask,
         &[ch('d')],
         "delete task",
@@ -831,6 +840,13 @@ pub const COMMANDS: &[Command] = &[
         only(Context::Confirm),
     )
     .hint(2, "cancel"),
+    Command::new(
+        C::DraftInEditor,
+        &[ctrl('o')],
+        "editor: description in $EDITOR",
+        G::Editing,
+        only(Context::Editor),
+    ),
     Command::new(
         C::DiscardChanges,
         &[ch('y')],

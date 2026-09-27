@@ -4,9 +4,9 @@ expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
    ╭ Keys · Board ──────────────────────────────────────╮
- Ba│   e                   edit task                    │
- ▔▔│   y                   duplicate task               │▔▔
-   │   m                   move to…                     │
+ Ba│   y                   duplicate task               │
+ ▔▔│   m                   move to…                     │▔▔
+   │   E                   edit description in $EDITOR  │
  ▌ │   d                   delete task                  │
  ▌ │   H/L                 move task left / right       │
  ▌ │   J/K                 move task down / up          │

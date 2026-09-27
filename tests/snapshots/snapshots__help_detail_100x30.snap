@@ -11,18 +11,18 @@ expression: "harness.screen(100, 30)"
    Done            2   ▌ Cover install, usage…   ▎ Tiles wit▎
                        ▌ ◷ 1d ago                ▎ ◷ 12m ago▎  Cover install, usage, keys and the
                                                             ▎  file format.
-              ╭ Keys · Details ─────────────────────────────────────────────────────╮
-              │ Tasks                          Details                              │
-              │   e    edit task                 PgUp/PgDn  scroll up / down a page │
-              │   y    duplicate task            j/k  ↓/↑   scroll down / up a line │
-              │   m    move to…                  Esc / q    close details           │
-              │   d    delete task                                                  │
-              │   H/L  move task left / right  General                              │
-              │   J/K  move task down / up       ?          this help               │
-              │                                  Ctrl+C     quit (anywhere)         │
-              │                                                                     │
-              │ j/k scroll   Esc close                                              │
-              ╰─────────────────────────────────────────────────────────────────────╯
+            ╭ Keys · Details ──────────────────────────────────────────────────────────╮
+            │ Tasks                               Details                              │
+            │   e    edit task                      PgUp/PgDn  scroll up / down a page │
+            │   y    duplicate task                 j/k  ↓/↑   scroll down / up a line │
+            │   m    move to…                       Esc / q    close details           │
+            │   E    edit description in $EDITOR                                       │
+            │   d    delete task                  General                              │
+            │   H/L  move task left / right         ?          this help               │
+            │   J/K  move task down / up            Ctrl+C     quit (anywhere)         │
+            │                                                                          │
+            │ j/k scroll   Esc close                                                   │
+            ╰──────────────────────────────────────────────────────────────────────────╯
                                                             ▎
                                                             ▎
                                                             ▎

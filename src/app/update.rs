@@ -4,7 +4,7 @@
 use std::time::Duration;
 use uuid::Uuid;
 
-use super::action::{Action, Effect};
+use super::action::{Action, Effect, ExternalTarget};
 use super::editor::{EditorField, EditorState, Placement};
 use super::history::Entry;
 use super::input::TextInput;
@@ -66,6 +66,9 @@ impl Updater<'_> {
             Action::GoToLane(letter) => self.go_to_lane(letter),
             Action::CancelPrefix => {}
             Action::Paste(text) => self.paste(&text),
+            Action::ExternalEditFinished { target, result } => {
+                self.finish_external_edit(target, result)
+            }
             Action::Resize(width, height) => {
                 self.model.ui.viewport = (width, height);
                 if !self.model.breakpoint().shows_rail() {
@@ -186,6 +189,22 @@ impl Updater<'_> {
                     self.pick_move_target(selected);
                 }
             }
+            CommandId::EditExternally => {
+                if let Some(task) = self.target_task().and_then(|id| self.model.board.task(id)) {
+                    self.effects.push(Effect::EditExternally {
+                        text: task.description.clone(),
+                        target: ExternalTarget::Task(task.id),
+                    });
+                }
+            }
+            CommandId::DraftInEditor => {
+                if let Some(Screen::Editor(editor)) = self.model.ui.screens.last() {
+                    self.effects.push(Effect::EditExternally {
+                        text: editor.description_text(),
+                        target: ExternalTarget::Draft,
+                    });
+                }
+            }
             CommandId::MoveTaskUp => self.reorder_task(-1),
             CommandId::MoveTaskDown => self.reorder_task(1),
             CommandId::EditTask => {
@@ -291,6 +310,42 @@ impl Updater<'_> {
                     input.handle_key(key);
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn finish_external_edit(&mut self, target: ExternalTarget, result: Result<String, String>) {
+        let text = match result {
+            Ok(text) => text.trim_end().to_owned(),
+            Err(message) => {
+                self.toast(format!("Editor: {message}"), ToastKind::Error, None);
+                return;
+            }
+        };
+        match target {
+            ExternalTarget::Draft => {
+                if let Some(Screen::Editor(editor)) = self.model.ui.screens.last_mut() {
+                    editor.set_description(&text);
+                    editor.field = EditorField::Description;
+                }
+            }
+            ExternalTarget::Task(id) => {
+                let Some(task) = self.model.board.task(id) else {
+                    return;
+                };
+                if task.description == text {
+                    return;
+                }
+                let title = task.title.clone();
+                let label = format!("edit '{title}'");
+                match self.change(label, |board, now| board.update_task(id, title, text, now)) {
+                    Ok(()) => self.toast(
+                        "Description saved · u to undo",
+                        ToastKind::Success,
+                        Duration::from_secs(3),
+                    ),
+                    Err(message) => self.toast(message, ToastKind::Error, None),
+                }
             }
         }
     }

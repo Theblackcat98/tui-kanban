@@ -3,32 +3,32 @@ source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
  Snapshot Board   Board · All tasks
-
-  Columns              Backlog  3                In Progress  2            Done  2
-                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
- ╭ Keys · Board ─────────────────────────────────────────────────────────────────────────────────╮
- │ Navigation                                       Tasks                                        │
- │   h/l  ←/→         previous / next column          Enter               open details           │
- │   j/k  ↓/↑         next / previous card            n/N                 new task below / above │
- │   PgUp/PgDn        up / down five cards or rows    a                   quick add to this lane │
- │   Home/End  g g/G  first / last card               e                   edit task              │
- │   1–9              lane by its number              y                   duplicate task         │
- │   g + letter       lane by its initial             m                   move to…               │
- │   Tab / Shift+Tab  focus rail / cards              d                   delete task            │
- │   v                Board / All tasks               H/L                 move task left / right │
- │                                                    J/K                 move task down / up    │
- │                                                    u/U  Ctrl+Z/Ctrl+R  undo / redo            │
- │                                                    /                   search                 │
- │                                                    Esc                 back / clear search    │
- │                                                                                               │
- │                                                  General                                      │
- │                                                    ?                   this help              │
- │                                                    q                   quit                   │
- │                                                    Ctrl+C              quit (anywhere)        │
- │                                                                                               │
- │ j/k scroll   Esc close                                                                        │
- ╰───────────────────────────────────────────────────────────────────────────────────────────────╯
-
-
-
+                       ╭ Keys · Board ──────────────────────────────────────╮
+  Columns              │ Navigation                                         │ne  2
+                       │   h/l  ←/→            previous / next column       │▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         3   │   j/k  ↓/↑            next / previous card         │
+   In Progress     2   │   PgUp/PgDn           up / down five cards or rows │Set up CI
+   Done            2   │   Home/End  g g/G     first / last card            │fmt, clippy and test…
+                       │   1–9                 lane by its number           │◷ 5h ago
+                       │   g + letter          lane by its initial          │
+                       │   Tab / Shift+Tab     focus rail / cards           │Snapshot tests
+                       │   v                   Board / All tasks            │◷ 1d ago
+                       │                                                    │
+                       │ Tasks                                              │
+                       │   Enter               open details                 │
+                       │   n/N                 new task below / above       │
+                       │   a                   quick add to this lane       │
+                       │   e                   edit task                    │
+                       │   y                   duplicate task               │
+                       │   m                   move to…                     │
+                       │   E                   edit description in $EDITOR  │
+                       │   d                   delete task                  │
+                       │   H/L                 move task left / right       │
+                       │   J/K                 move task down / up          │
+                       │   u/U  Ctrl+Z/Ctrl+R  undo / redo                  │
+                       │   /                   search                       │
+                       │   Esc                 back / clear search          │
+                       │                                                    │
+                       │ ↓ more   j/k scroll   Esc close                    │
+                       ╰────────────────────────────────────────────────────╯
  HELP   ● saved   j/k scroll   Esc close

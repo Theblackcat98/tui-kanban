@@ -15,7 +15,7 @@ mod input;
 mod model;
 mod update;
 
-pub use action::{Action, Effect, keymap};
+pub use action::{Action, Effect, ExternalTarget, keymap};
 pub use editor::{EditorField, EditorState, Placement};
 pub use history::History;
 pub use input::TextInput;
@@ -69,6 +69,8 @@ pub struct App {
     /// Created when the first-run tip is dismissed, so it stays dismissed.
     /// Without one, the tip isn't shown.
     tip_marker: Option<PathBuf>,
+    /// Text waiting to be edited in `$EDITOR`, which needs the terminal.
+    external_edit: Option<(String, ExternalTarget)>,
     quit: bool,
 }
 
@@ -81,6 +83,7 @@ impl App {
             model: Model::new(board, theme, animations_enabled),
             store,
             tip_marker: None,
+            external_edit: None,
             quit: false,
         })
     }
@@ -122,6 +125,9 @@ impl App {
                         queue.push_back(Action::SaveFinished(result));
                     }
                     Effect::Quit => self.quit = true,
+                    Effect::EditExternally { text, target } => {
+                        self.external_edit = Some((text, target));
+                    }
                     Effect::DismissTip => {
                         // Best effort: if this fails the tip shows again
                         // next time, which is harmless.
@@ -135,6 +141,11 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Text the runtime should open in `$EDITOR`, if any.
+    pub fn take_external_edit(&mut self) -> Option<(String, ExternalTarget)> {
+        self.external_edit.take()
     }
 
     pub fn should_quit(&self) -> bool {
@@ -207,6 +218,19 @@ fn init_terminal() -> Result<DefaultTerminal> {
     Ok(terminal)
 }
 
+/// Leaves the TUI while the user edits `text` in their own editor, then
+/// comes back to it.
+fn edit_externally(
+    terminal: &mut DefaultTerminal,
+    text: &str,
+) -> Result<std::result::Result<String, String>> {
+    restore_terminal()?;
+    let result = crate::tui::external::edit(text);
+    *terminal = init_terminal()?;
+    terminal.clear()?;
+    Ok(result)
+}
+
 fn restore_terminal() -> Result<()> {
     let _ = execute!(io::stdout(), DisableBracketedPaste);
     ratatui::try_restore().context("could not restore terminal")
@@ -232,6 +256,13 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             match event::read()? {
                 Event::Key(key) => {
                     app.handle_key(key, Clock::now());
+                    if let Some((text, target)) = app.take_external_edit() {
+                        let result = edit_externally(terminal, &text)?;
+                        app.dispatch(
+                            Action::ExternalEditFinished { target, result },
+                            Clock::now(),
+                        );
+                    }
                     needs_redraw = true;
                 }
                 Event::Paste(text) => {
@@ -422,6 +453,48 @@ mod tests {
         press(&mut app, &[KeyCode::Esc, KeyCode::Char('y')]);
         assert!(app.model.ui.screens.is_empty());
         assert_eq!(app.model.board.task_count(), 0);
+    }
+
+    #[test]
+    fn descriptions_can_be_edited_in_an_external_editor() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Write it up");
+        press(&mut app, &[KeyCode::Char('E')]);
+        let (text, target) = app.take_external_edit().expect("an edit request");
+        assert_eq!((text.as_str(), target), ("", ExternalTarget::Task(id)));
+        let finished = |result| Action::ExternalEditFinished { target, result };
+        app.dispatch(finished(Ok("# Plan\n\n- [ ] draft\n".to_owned())), clock());
+        assert_eq!(
+            app.model.board.task(id).unwrap().description,
+            "# Plan\n\n- [ ] draft"
+        );
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(app.model.board.task(id).unwrap().description, "");
+        app.dispatch(finished(Err("vi exited with 1".to_owned())), clock());
+        assert_eq!(toast_message(&app), "Editor: vi exited with 1");
+
+        // From the editor overlay, the text goes back into the draft.
+        press(&mut app, &[KeyCode::Char('e')]);
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        let (_, target) = app.take_external_edit().expect("an edit request");
+        assert_eq!(target, ExternalTarget::Draft);
+        app.dispatch(
+            Action::ExternalEditFinished {
+                target,
+                result: Ok("From vim".to_owned()),
+            },
+            clock(),
+        );
+        match top_screen(&app) {
+            Some(Screen::Editor(editor)) => {
+                assert_eq!(editor.description_text(), "From vim");
+                assert_eq!(editor.field, EditorField::Description);
+            }
+            other => panic!("expected the editor, got {other:?}"),
+        }
     }
 
     #[test]
@@ -668,6 +741,7 @@ mod tests {
             model: Model::new(Default::default(), Theme::mocha(), false),
             store,
             tip_marker: None,
+            external_edit: None,
             quit: false,
         };
         app.resize(100, 30);
