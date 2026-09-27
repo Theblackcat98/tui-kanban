@@ -192,7 +192,9 @@ pub(crate) fn render_tip(frame: &mut Frame<'_>, area: Rect, model: &Model) {
         Span::styled(" Tip ", fg(theme.info).add_modifier(Modifier::BOLD)),
         Span::styled(" Press ", faint(model)),
         Span::styled("?", fg(theme.text).add_modifier(Modifier::BOLD)),
-        Span::styled(" for the keys on any screen · ", faint(model)),
+        Span::styled(" for keys, ", faint(model)),
+        Span::styled(":", fg(theme.text).add_modifier(Modifier::BOLD)),
+        Span::styled(" for commands · ", faint(model)),
         Span::styled("Esc", fg(theme.text).add_modifier(Modifier::BOLD)),
         Span::styled(" to dismiss", faint(model)),
     ]);

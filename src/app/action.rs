@@ -71,6 +71,13 @@ pub fn keymap(model: &Model, key: KeyEvent) -> Option<Action> {
     }
     let context = model.context();
     if let Some(pending) = model.ui.pending {
+        // After Space, any key does what it would have done anyway.
+        if pending.prefix == ' ' {
+            return Some(match key.code {
+                KeyCode::Esc | KeyCode::Char(' ') => Action::CancelPrefix,
+                _ => command_for(context, &key).unwrap_or(Action::CancelPrefix),
+            });
+        }
         return Some(complete_prefix(context, pending.prefix, &key));
     }
     // Enter saves from the title, but types a line break in the
@@ -85,20 +92,27 @@ pub fn keymap(model: &Model, key: KeyEvent) -> Option<Action> {
     {
         return Some(Action::Edit(key));
     }
-    if let Some(id) = command::lookup(context, &key) {
-        if id == CommandId::JumpToLane
-            && let KeyCode::Char(digit @ '1'..='9') = key.code
-        {
-            return Some(Action::JumpToLane(digit as usize - '1' as usize));
-        }
-        return Some(Action::Command(id));
+    if let Some(action) = command_for(context, &key) {
+        return Some(action);
     }
     match context {
         Context::Search | Context::Editor => Some(Action::Edit(key)),
         Context::Help => Some(Action::DismissHelp),
-        Context::QuickAdd => Some(Action::Edit(key)),
+        Context::QuickAdd | Context::Palette => Some(Action::Edit(key)),
         _ => None,
     }
+}
+
+/// The action for a key from the command table, with digits carrying the
+/// lane they name.
+fn command_for(context: Context, key: &KeyEvent) -> Option<Action> {
+    let id = command::lookup(context, key)?;
+    if id == CommandId::JumpToLane
+        && let KeyCode::Char(digit @ '1'..='9') = key.code
+    {
+        return Some(Action::JumpToLane(digit as usize - '1' as usize));
+    }
+    Some(Action::Command(id))
 }
 
 /// The action for the key after a prefix: a chord from the command table,

@@ -9,6 +9,7 @@ use super::editor::{EditorField, EditorState, Placement};
 use super::history::Entry;
 use super::input::TextInput;
 use super::model::{FocusRegion, Model, Pending, SaveState, Screen, Toast, ToastKind, ViewMode};
+use super::palette::{self, Palette, Target};
 use crate::animation::AnimationKind;
 use crate::clock::Clock;
 use crate::command::CommandId;
@@ -121,12 +122,21 @@ impl Updater<'_> {
             }
             // Digits and `g` + letter arrive as their own actions.
             CommandId::JumpToLane | CommandId::GoToLane => {}
-            CommandId::GoPrefix => {
+            CommandId::GoPrefix | CommandId::Leader => {
                 self.model.ui.pending = Some(Pending {
-                    prefix: 'g',
+                    prefix: if id == CommandId::Leader { ' ' } else { 'g' },
                     since: self.clock.instant,
                 });
             }
+            CommandId::OpenPalette => {
+                let context = self.model.context();
+                self.push(Screen::Palette(Palette::new(context)));
+                self.animate(AnimationKind::Modal, 140);
+            }
+            CommandId::PaletteDown => self.move_palette(1),
+            CommandId::PaletteUp => self.move_palette(-1),
+            CommandId::PaletteRun => self.run_palette_entry(),
+            CommandId::PaletteClose => self.pop(),
             CommandId::FocusCards => self.model.ui.focus = FocusRegion::Cards,
             CommandId::ToggleFocus => {
                 let rail_shown = self.model.breakpoint().shows_rail();
@@ -328,8 +338,75 @@ impl Updater<'_> {
                 Some(Screen::QuickAdd { input, .. }) => {
                     input.handle_key(key);
                 }
+                Some(Screen::Palette(palette)) => {
+                    if palette.input.handle_key(key) {
+                        palette.selected = 0;
+                    }
+                }
                 _ => {}
             }
+        }
+    }
+
+    fn move_palette(&mut self, direction: isize) {
+        let Some(Screen::Palette(palette)) = self.model.ui.screens.last() else {
+            return;
+        };
+        let count = palette::entries(self.model, palette).len();
+        if let Some(Screen::Palette(palette)) = self.model.ui.screens.last_mut()
+            && count > 0
+        {
+            palette.selected =
+                (palette.selected as isize + direction).rem_euclid(count as isize) as usize;
+        }
+    }
+
+    /// Closes the palette and does what its highlighted entry says.
+    fn run_palette_entry(&mut self) {
+        let Some(Screen::Palette(palette)) = self.model.ui.screens.last() else {
+            return;
+        };
+        let entry = palette::entries(self.model, palette)
+            .into_iter()
+            .nth(palette.selected);
+        self.pop();
+        let Some(entry) = entry else {
+            return;
+        };
+        match entry.target {
+            Target::Command(id) => {
+                palette::remember(&mut self.model.session.recent_commands, id);
+                self.execute(id);
+            }
+            Target::Lane(column) => {
+                self.close_drawer();
+                self.model.ui.focus = FocusRegion::Cards;
+                self.select_column(column);
+            }
+            Target::Task(id) => {
+                // Clear a search that hides the task.
+                if !self.model.visible_tasks().iter().any(|task| task.id == id) {
+                    self.model.ui.search = Default::default();
+                }
+                self.model.ui.focus = FocusRegion::Cards;
+                self.model.select_task(id);
+                self.model.reconcile_selection();
+                // From the drawer, show the task there.
+                if let Some(Screen::Detail { task, scroll, item }) =
+                    self.model.ui.screens.last_mut()
+                {
+                    *task = id;
+                    *scroll = 0;
+                    *item = 0;
+                }
+                self.animate(AnimationKind::Selection, 140);
+            }
+        }
+    }
+
+    fn close_drawer(&mut self) {
+        if matches!(self.model.ui.screens.last(), Some(Screen::Detail { .. })) {
+            self.pop();
         }
     }
 
@@ -465,6 +542,10 @@ impl Updater<'_> {
             }
             Some(Screen::QuickAdd { input, .. }) => {
                 input.insert_str(&text.replace(['\n', '\r'], " "));
+            }
+            Some(Screen::Palette(palette)) => {
+                palette.input.insert_str(&text.replace(['\n', '\r'], " "));
+                palette.selected = 0;
             }
             _ => {}
         }

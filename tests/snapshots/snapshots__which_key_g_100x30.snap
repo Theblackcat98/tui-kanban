@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots.rs
-expression: "harness.screen(100, 30)"
+expression: buffer_text(terminal.backend().buffer())
 ---
  Snapshot Board   Board · All tasks
 
@@ -28,7 +28,7 @@ expression: "harness.screen(100, 30)"
 
 
 
+── g ───────────────────────────────────────────────────────────────────────────────── Esc cancel ──
+  g  first card   b  Backlog   i  In Progress   d  Done
 
-
- Tip  Press ? for keys, : for commands · Esc to dismiss
  BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n/N new   Enter open   e edit

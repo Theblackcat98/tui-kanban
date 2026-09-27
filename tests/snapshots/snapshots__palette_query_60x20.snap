@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ Snapshot Board   Board · All tasks
+ ╭ Commands ──────────────────────────────────────────────╮
+ │  › snap                                                │
+ │                                                        │
+ │ ▌ Go to task: Snapshot tests  Done                     │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │                                                        │
+ │  Enter run   ↓/↑ choose   Esc close                    │
+ ╰────────────────────────────────────────────────────────╯
+ COMMAND   ● saved   Enter run   ↓/↑ choose   Esc close

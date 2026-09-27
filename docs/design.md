@@ -194,10 +194,30 @@ Shift+arrows to select, and pasted text in one piece.
 Help lists the keys for the screen it was opened from (`Keys · Board`,
 `Keys · Details`, …), grouped as in the command table.
 
+### Command palette
+
+`:` or Ctrl+K opens a centred overlay listing every command available
+on the screen it was opened from, then "Go to lane: …" for each column
+and "Go to task: …" for each task (with its column, faint). Each row has
+its shortcut on the right. Typing ranks the rows by fuzzy match, with
+the matched letters highlighted; with nothing typed, commands recently
+run from the palette come first, then actions before movement. ↓/↑ or
+Ctrl+N/Ctrl+P choose, Enter runs, Esc or Ctrl+C closes. Going to a task
+that a search hides clears the search.
+
+### Which-key
+
+Space shows a panel above the status line listing every key available
+on the current screen; the next key does what it would have done
+anyway. Holding `g` for 300 ms shows the keys that can follow it: `g`
+for the first card, and each lane's initial. The panel sizes each
+column to its content, and cuts labels only when there isn't room for
+enough columns to show every key.
+
 ### Tip bar
 
-Until it is dismissed, a one-row bar above the status line says `Press ?
-for the keys on any screen · Esc to dismiss`. Opening help or pressing
+Until it is dismissed, a one-row bar above the status line says `Press ? for
+keys, : for commands · Esc to dismiss`. Opening help or pressing
 Esc on the board dismisses it for good (a marker file in the state
 directory, `~/.local/state/tui-kanban`).
 
@@ -218,6 +238,9 @@ The same keys mean the same thing on every screen:
 | `Esc` | Go back one level (close an overlay, clear a search, leave the rail); never quits |
 | `q` | Quit from the board; close from inside an overlay |
 | `?` | Help for the current screen |
+| `:` / Ctrl+K | The command palette |
+| `Space` | Which-key: every key for the current screen |
+| `/` | Search; Ctrl+N / Ctrl+P jump between matches |
 
 Moving faster: `1`–`9` jump to a lane, `g g` / `G` to the first or last
 card, `g` + a letter to the next lane with that initial.

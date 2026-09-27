@@ -17,18 +17,18 @@ expression: "harness.screen(100, 30)"
 
                        ▎ Package release
                        ▎ binaries
-                       ▎ ◷ Aug 20
+── Space ───────────────────────────────────────────────────────────────────────────── Esc cancel ──
+  h/l         previous / next column         y       duplicate task
+  j/k         next / previous card           m       move to…
+  PgUp/PgDn   up / down five cards or rows   E       edit description in $EDITOR
+  Home/End    first / last card              d       delete task
+  1–9         lane by its number             H/L     move task left / right
+  g + letter  lane by its initial            J/K     move task down / up
+  Tab         focus rail / cards             /       search
+  v           Board / All tasks              ?       this help
+  Enter       open details                   :       command palette
+  n/N         new task below / above         q       quit
+  a           quick add to this lane         Ctrl+C  quit (anywhere)
+  e           edit task
 
-
-
-
-
-
-
-
-
-
-
-
- Tip  Press ? for keys, : for commands · Esc to dismiss
  BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n/N new   Enter open   e edit

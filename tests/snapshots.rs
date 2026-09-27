@@ -590,3 +590,35 @@ fn search_highlights_matched_characters() {
         .collect();
     assert_eq!(colours, expected, "{row}");
 }
+
+// Command palette and which-key (#46)
+
+#[test]
+fn command_palette() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char(':')]);
+    screen_snapshot!("palette_100x30", harness, 100, 30);
+    harness.type_text("snap");
+    screen_snapshot!("palette_query_100x30", harness, 100, 30);
+    screen_snapshot!("palette_query_60x20", harness, 60, 20);
+}
+
+#[test]
+fn which_key_panels() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char(' ')]);
+    screen_snapshot!("which_key_space_100x30", harness, 100, 30);
+    screen_snapshot!("which_key_space_60x20", harness, 60, 20);
+    harness.keys(&[KeyCode::Esc, KeyCode::Char('g')]);
+    // Not straight away, so typing g g quickly doesn't flash it up.
+    assert!(!harness.screen(100, 30).contains("first card"));
+    let later = clock().advance(Duration::from_millis(400));
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    terminal
+        .draw(|frame| tui_kanban::ui::render(frame, &harness.app.model, later))
+        .unwrap();
+    insta::assert_snapshot!(
+        "which_key_g_100x30",
+        buffer_text(terminal.backend().buffer())
+    );
+}

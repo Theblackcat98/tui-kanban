@@ -13,6 +13,7 @@ mod editor;
 mod history;
 mod input;
 mod model;
+mod palette;
 mod update;
 
 pub use action::{Action, Effect, ExternalTarget, keymap};
@@ -22,6 +23,9 @@ pub use input::TextInput;
 pub use model::{
     FocusRegion, Model, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind, Ui, ViewMode,
     VisibleTask,
+};
+pub use palette::{
+    Entry as PaletteEntry, Palette, Target as PaletteTarget, entries as palette_entries,
 };
 pub use update::update;
 
@@ -173,6 +177,13 @@ impl App {
         let mut timeout = IDLE_REFRESH;
         if let Some(frame) = self.model.ui.animations.next_frame_timeout(now) {
             timeout = timeout.min(frame);
+        }
+        // Wake when a held prefix should show its which-key panel.
+        if let Some(pending) = self.model.ui.pending {
+            let due = pending.since + crate::ui::WHICH_KEY_DELAY;
+            if due > now {
+                timeout = timeout.min(due - now);
+            }
         }
         if let Some(expires_at) = self
             .model
@@ -1188,6 +1199,94 @@ mod tests {
             .unwrap()
             .with_tip_marker(marker);
         assert!(!app.model.ui.tip);
+    }
+
+    fn palette_labels(app: &App) -> Vec<String> {
+        match top_screen(app) {
+            Some(Screen::Palette(palette)) => palette_entries(&app.model, palette)
+                .into_iter()
+                .map(|entry| entry.label)
+                .collect(),
+            other => panic!("expected the palette, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_palette_runs_commands_and_remembers_them() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Travel");
+        press(&mut app, &[KeyCode::Char(':')]);
+        type_text(&mut app, "move to");
+        assert_eq!(palette_labels(&app)[0], "Move to…");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(matches!(top_screen(&app), Some(Screen::MoveTo { task, .. }) if *task == id));
+        press(&mut app, &[KeyCode::Esc]);
+        // Ctrl+K opens it too, with the command just used first.
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert_eq!(palette_labels(&app)[0], "Move to…");
+        // Ctrl+C closes it without quitting.
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.should_quit());
+    }
+
+    #[test]
+    fn the_palette_goes_to_lanes_and_tasks() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Alpha");
+        let hidden = add(&mut app, 2, "Needle in the haystack");
+        // A search that hides the task is cleared to show it.
+        press(&mut app, &[KeyCode::Char('/')]);
+        type_text(&mut app, "alpha");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char(':')]);
+        type_text(&mut app, "needle");
+        assert_eq!(
+            palette_labels(&app)[0],
+            "Go to task: Needle in the haystack"
+        );
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.selected_task_id(), Some(hidden));
+        assert!(!app.model.ui.search.is_active());
+        press(&mut app, &[KeyCode::Char(':')]);
+        type_text(&mut app, "lane in progress");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.ui.active_column, 1);
+        // ↓ / ↑ move through the entries, wrapping around.
+        press(&mut app, &[KeyCode::Char(':'), KeyCode::Up]);
+        match top_screen(&app) {
+            Some(Screen::Palette(palette)) => {
+                let count = palette_entries(&app.model, palette).len();
+                assert_eq!(palette.selected, count - 1);
+            }
+            other => panic!("expected the palette, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn space_passes_the_next_key_through() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Char(' ')]);
+        assert!(app.model.ui.pending.is_some());
+        press(&mut app, &[KeyCode::Char('n')]);
+        assert!(matches!(top_screen(&app), Some(Screen::Editor(_))));
+        press(&mut app, &[KeyCode::Esc, KeyCode::Char(' '), KeyCode::Esc]);
+        assert!(app.model.ui.pending.is_none());
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn a_held_prefix_wakes_the_loop_for_which_key() {
+        let (_directory, mut app) = test_app();
+        let clock = clock();
+        app.handle_key(key(KeyCode::Char('g')), clock);
+        let timeout = app.next_timeout(clock.instant);
+        assert!(timeout <= crate::ui::WHICH_KEY_DELAY && timeout > Duration::ZERO);
     }
 
     #[test]

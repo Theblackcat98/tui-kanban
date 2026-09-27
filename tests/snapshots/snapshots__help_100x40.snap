@@ -3,17 +3,16 @@ source: tests/snapshots.rs
 expression: "harness.screen(100, 40)"
 ---
  Snapshot Board   Board · All tasks
-
-  Columns              ╭ Keys · Board ──────────────────────────────────────╮ne  2
-                       │ Navigation                                         │▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
- ▌ Backlog         3   │   h/l  ←/→            previous / next column       │
-   In Progress     2   │   j/k  ↓/↑            next / previous card         │Set up CI
-   Done            2   │   PgUp/PgDn           up / down five cards or rows │fmt, clippy and test…
-                       │   Home/End  g g/G     first / last card            │◷ 5h ago
-                       │   1–9                 lane by its number           │
-                       │   g + letter          lane by its initial          │Snapshot tests
-                       │   Tab / Shift+Tab     focus rail / cards           │◷ 1d ago
-                       │   v                   Board / All tasks            │
+                       ╭ Keys · Board ──────────────────────────────────────╮
+  Columns              │ Navigation                                         │ne  2
+                       │   h/l  ←/→            previous / next column       │▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         3   │   j/k  ↓/↑            next / previous card         │
+   In Progress     2   │   PgUp/PgDn           up / down five cards or rows │Set up CI
+   Done            2   │   Home/End  g g/G     first / last card            │fmt, clippy and test…
+                       │   1–9                 lane by its number           │◷ 5h ago
+                       │   g + letter          lane by its initial          │
+                       │   Tab / Shift+Tab     focus rail / cards           │Snapshot tests
+                       │   v                   Board / All tasks            │◷ 1d ago
                        │                                                    │
                        │ Tasks                                              │
                        │   Enter               open details                 │
@@ -34,11 +33,12 @@ expression: "harness.screen(100, 40)"
                        │                                                    │
                        │ General                                            │
                        │   ?                   this help                    │
+                       │   : / Ctrl+K          command palette              │
+                       │   Space               show the keys you can press  │
                        │   q                   quit                         │
                        │   Ctrl+C              quit (anywhere)              │
                        │                                                    │
                        │ j/k scroll   Esc close                             │
                        ╰────────────────────────────────────────────────────╯
-
 
  HELP   ● saved   j/k scroll   Esc close

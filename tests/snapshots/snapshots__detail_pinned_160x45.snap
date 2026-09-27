@@ -46,4 +46,4 @@ expression: "harness.screen(160, 45)"
                                                                                                         ▎    • line 37                                        │
                                                                                                         ▎    • line 38                                        │
                                                                                                         ▎
- DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help
+ DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help   : commands

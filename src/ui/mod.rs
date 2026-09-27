@@ -11,12 +11,15 @@ mod geometry;
 mod help;
 mod lanes;
 mod menu;
+mod palette;
 mod prompt;
 mod rail;
 mod rich;
 mod text;
+mod which_key;
 
 pub(crate) use geometry::{all_tasks_rows, reveal_detail_item, sync_scroll};
+pub use which_key::DELAY as WHICH_KEY_DELAY;
 
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{Model, Screen, ViewMode};
@@ -52,6 +55,8 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
     if let Some(tip) = page.tip {
         bars::render_tip(frame, tip, model);
     }
+    let above_bars = page.tip.map_or(page.status.y, |tip| tip.y);
+    which_key::render(frame, area, above_bars, model, clock);
     bars::render_status(frame, page.status, model, clock);
 
     // Screens are drawn bottom first, so a dialog opened from the detail
@@ -69,6 +74,7 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
             }
             Screen::ConfirmDelete { task } => confirm::render(frame, area, model, *task, clock),
             Screen::ConfirmDiscard => confirm::render_discard(frame, area, model, clock),
+            Screen::Palette(state) => palette::render(frame, area, model, state, clock),
             Screen::MoveTo { task, selected } => {
                 menu::render(frame, area, model, *task, *selected, clock)
             }

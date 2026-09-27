@@ -21,7 +21,7 @@
 
 use std::cell::RefCell;
 
-use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
+use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -166,6 +166,35 @@ impl Filter {
     /// Which graphemes of a line of description the text terms matched.
     pub fn description_highlights(&self, line: &str) -> Vec<usize> {
         highlights(&self.description_atoms, line, false)
+    }
+}
+
+/// A fuzzy query for ranking short labels, such as the command palette's.
+#[derive(Clone, Debug)]
+pub struct Fuzzy {
+    pattern: Pattern,
+}
+
+impl Fuzzy {
+    pub fn new(query: &str) -> Self {
+        Self {
+            pattern: Pattern::parse(query, CaseMatching::Smart, Normalization::Smart),
+        }
+    }
+
+    /// How well `text` matches, higher being better, and which of its
+    /// graphemes matched; `None` if it doesn't.
+    pub fn score(&self, text: &str) -> Option<(u32, Vec<usize>)> {
+        MATCHER.with_borrow_mut(|matcher| {
+            let mut storage = Haystack::default();
+            let haystack = storage.of(text);
+            let mut indices = Vec::new();
+            let score = self.pattern.indices(haystack, matcher, &mut indices)?;
+            let mut indices: Vec<usize> = indices.into_iter().map(|index| index as usize).collect();
+            indices.sort_unstable();
+            indices.dedup();
+            Some((score, indices))
+        })
     }
 }
 
@@ -385,6 +414,17 @@ mod tests {
         let filter = Filter::parse("updated:soon in:", NOW);
         let kinds: Vec<&Term> = filter.terms().map(|(_, term)| term).collect();
         assert!(matches!(kinds[..], [Term::Text(_), Term::Text(_)]));
+    }
+
+    #[test]
+    fn fuzzy_ranks_labels() {
+        let fuzzy = Fuzzy::new("mv");
+        let (move_score, indices) = fuzzy.score("move to…").unwrap();
+        assert_eq!(indices, [0, 2]);
+        let (other, _) = fuzzy.score("remove the last filter term").unwrap();
+        assert!(move_score > other);
+        assert!(fuzzy.score("undo").is_none());
+        assert!(Fuzzy::new("").score("anything").is_some());
     }
 
     #[test]

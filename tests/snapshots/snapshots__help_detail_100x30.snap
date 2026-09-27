@@ -4,13 +4,12 @@ expression: "harness.screen(100, 30)"
 ---
  Snapshot Board   Board · All tasks
                                                             ▎
-  Columns              Backlog  3                In Progress▎  Write the README
-                      ╭ Keys · Details ──────────────────────────────────────╮
- ▌ Backlog         3  │ Tasks                                                │0000
-   In Progress     2  │   e                   edit task                      │· created Aug 27
-   Done            2  │   y                   duplicate task                 │
-                      │   m                   move to…                       │usage, keys and the
-                      │   E                   edit description in $EDITOR    │
+  Columns             ╭ Keys · Details ──────────────────────────────────────╮E
+                      │ Tasks                                                │
+ ▌ Backlog         3  │   e                   edit task                      │0000
+   In Progress     2  │   y                   duplicate task                 │· created Aug 27
+   Done            2  │   m                   move to…                       │
+                      │   E                   edit description in $EDITOR    │usage, keys and the
                       │   d                   delete task                    │
                       │   H/L                 move task left / right         │
                       │   J/K                 move task down / up            │
@@ -25,6 +24,7 @@ expression: "harness.screen(100, 30)"
                       │                                                      │
                       │ General                                              │
                       │   ?                   this help                      │
+                      │   : / Ctrl+K          command palette                │
                       │   Ctrl+C              quit (anywhere)                │
                       │                                                      │
                       │ j/k scroll   Esc close                               │

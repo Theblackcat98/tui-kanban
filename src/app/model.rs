@@ -11,6 +11,7 @@ use uuid::Uuid;
 use super::editor::EditorState;
 use super::history::History;
 use super::input::TextInput;
+use super::palette::Palette;
 use crate::animation::{AnimationEngine, AnimationSettings};
 use crate::command::{CommandId, Context};
 use crate::domain::{Board, Filter, Task};
@@ -69,10 +70,11 @@ pub enum Screen {
     },
     /// "Discard changes?", above the editor.
     ConfirmDiscard,
+    Palette(Palette),
 }
 
-/// A prefix key waiting for the key that completes it, as the `g` in
-/// `g g`.
+/// A prefix key waiting for the key that completes it: the `g` in `g g`,
+/// or Space, which shows every key available (the which-key panel).
 #[derive(Clone, Copy, Debug)]
 pub struct Pending {
     pub prefix: char,
@@ -191,6 +193,8 @@ pub struct Session {
     pub save_state: SaveState,
     pub toast: Option<Toast>,
     pub history: History,
+    /// Commands recently run from the palette, most recent first.
+    pub recent_commands: Vec<CommandId>,
 }
 
 #[derive(Clone, Debug)]
@@ -246,6 +250,7 @@ impl Model {
             Some(Screen::MoveTo { .. }) => Context::MoveTo,
             Some(Screen::QuickAdd { .. }) => Context::QuickAdd,
             Some(Screen::ConfirmDiscard) => Context::Discard,
+            Some(Screen::Palette(_)) => Context::Palette,
             Some(Screen::ConfirmDelete { .. }) => Context::Confirm,
             Some(Screen::Editor(_)) => Context::Editor,
             Some(Screen::Detail { .. }) => Context::Detail,

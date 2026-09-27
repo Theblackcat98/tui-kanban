@@ -30,10 +30,12 @@ pub enum Context {
     QuickAdd = 1 << 10,
     /// "Discard changes?" after cancelling a changed draft.
     Discard = 1 << 11,
+    /// The command palette.
+    Palette = 1 << 12,
 }
 
 impl Context {
-    pub const ALL: [Context; 12] = [
+    pub const ALL: [Context; 13] = [
         Context::Board,
         Context::AllTasks,
         Context::Rail,
@@ -46,6 +48,7 @@ impl Context {
         Context::MoveTo,
         Context::QuickAdd,
         Context::Discard,
+        Context::Palette,
     ];
 
     /// The name shown in the status line's mode pill and help's title.
@@ -63,6 +66,7 @@ impl Context {
             Self::MoveTo => "MOVE",
             Self::QuickAdd => "ADD",
             Self::Discard => "DISCARD",
+            Self::Palette => "COMMAND",
         }
     }
 
@@ -81,6 +85,7 @@ impl Context {
             Self::MoveTo => "Move to",
             Self::QuickAdd => "Quick add",
             Self::Discard => "Discard changes",
+            Self::Palette => "Command palette",
         }
     }
 }
@@ -239,6 +244,12 @@ pub enum CommandId {
     HelpScrollDown,
     CloseHelp,
     Help,
+    OpenPalette,
+    Leader,
+    PaletteDown,
+    PaletteUp,
+    PaletteRun,
+    PaletteClose,
     Quit,
     ForceQuit,
 }
@@ -918,6 +929,38 @@ pub const COMMANDS: &[Command] = &[
         only(Context::Editor),
     ),
     Command::new(
+        C::PaletteDown,
+        &[key(KeyCode::Down), ctrl('n')],
+        "palette: next",
+        G::Editing,
+        only(Context::Palette),
+    )
+    .hint(2, "choose")
+    .pair(C::PaletteUp, "palette: next / previous"),
+    Command::new(
+        C::PaletteUp,
+        &[key(KeyCode::Up), ctrl('p')],
+        "palette: previous",
+        G::Editing,
+        only(Context::Palette),
+    ),
+    Command::new(
+        C::PaletteRun,
+        &[key(KeyCode::Enter)],
+        "palette: run",
+        G::Editing,
+        only(Context::Palette),
+    )
+    .hint(1, "run"),
+    Command::new(
+        C::PaletteClose,
+        &[key(KeyCode::Esc), ctrl('c')],
+        "palette: close",
+        G::Editing,
+        only(Context::Palette),
+    )
+    .hint(3, "close"),
+    Command::new(
         C::DiscardChanges,
         &[ch('y')],
         "discard: confirm",
@@ -1020,6 +1063,21 @@ pub const COMMANDS: &[Command] = &[
     )
     .hint(11, "help"),
     Command::new(
+        C::OpenPalette,
+        &[ch(':'), ctrl('k')],
+        "command palette",
+        G::General,
+        UNDO,
+    )
+    .hint(12, "commands"),
+    Command::new(
+        C::Leader,
+        &[ch(' ')],
+        "show the keys you can press",
+        G::General,
+        DASHBOARD,
+    ),
+    Command::new(
         C::Quit,
         &[ch('q')],
         "quit",
@@ -1037,7 +1095,7 @@ pub const COMMANDS: &[Command] = &[
         "quit (anywhere)",
         G::General,
         // Ctrl+C cancels typing rather than losing it.
-        except(&[Context::QuickAdd, Context::Editor]),
+        except(&[Context::QuickAdd, Context::Editor, Context::Palette]),
     ),
 ];
 
@@ -1150,6 +1208,7 @@ mod tests {
             let expected = match context {
                 Context::QuickAdd => C::CloseQuickAdd,
                 Context::Editor => C::CancelEdit,
+                Context::Palette => C::PaletteClose,
                 _ => C::ForceQuit,
             };
             assert_eq!(lookup(context, &ctrl_c), Some(expected));
