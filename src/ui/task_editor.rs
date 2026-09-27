@@ -3,6 +3,7 @@ use super::{centered_rect, field_label, render_clear, surface_style, truncate_te
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{App, EditorField, EditorState};
 use crate::clock::Clock;
+use crate::command::Context;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -76,10 +77,8 @@ pub(crate) fn render(
         editor.field == EditorField::Description,
         app,
     );
-    let message = editor
-        .error
-        .as_deref()
-        .unwrap_or("Enter saves • Tab switches fields • Esc cancels");
+    let hints = super::hint_text(app, Context::Editor, inner.width.saturating_sub(1) as usize);
+    let message = editor.error.as_deref().unwrap_or(&hints);
     let color = if editor.error.is_some() {
         app.theme.error
     } else {

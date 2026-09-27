@@ -3,22 +3,22 @@ source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
  TUI KANBAN   Snapshot Board                         saved
-╭─────╭ Keyboard shortcuts ──────────────────────────╮─────╮
-│ Back│ Navigation                                   │     │
-│╭────│   v                toggle Board / All tasks  │────╮│
-││Writ│   Tab              focus rail / cards        │    ││
-││    │   h / l or ← / →   select column             │    ││
-││Cove│   j / k or ↑ / ↓   select card               │    ││
-││ Bac│   Home / End       first / last card         │    ││
-│╰────│   PageUp / PageDn  move by five cards        │────╯│
-│╭────│                                              │────╮│
-││Reco│ Tasks                                        │    ││
-││    │   n                new task                  │    ││
-││Comm│   e                edit task                 │    ││
-││ Bac│   d                delete task               │    ││
-│╰────│   H / L            move task to column       │────╯│
-│     │   Enter            open details              │     │
-│     │                                              │     │
-│     │ ↓ more  •  j/k scroll  •  esc close          │     │
-╰─────╰──────────────────────────────────────────────╯─────╯
- j/k scroll  •  any other key close
+╭──╭ Keyboard shortcuts ────────────────────────────────╮──╮
+│ B│ Navigation                                         │  │
+│╭─│   h/l  ←/→            previous / next column       │─╮│
+││W│   j/k  ↓/↑            next / previous card         │ ││
+││ │   PgUp/PgDn           up / down five cards         │ ││
+││C│   Home/End            first / last card            │ ││
+││ │   j/k  ↓/↑  l/h  →/←  rail: next / previous column │ ││
+│╰─│   Home/End            rail: first / last column    │─╯│
+│╭─│   Enter               rail: focus cards            │─╮│
+││R│   Tab / Shift+Tab     focus rail / cards           │ ││
+││ │   v                   Board / All tasks            │ ││
+││C│                                                    │ ││
+││ │ Tasks                                              │ ││
+│╰─│   Enter               open details                 │─╯│
+│  │   n                   new task                     │  │
+│  │                                                    │  │
+│  │ ↓ more  •  j/k scroll  •  esc close                │  │
+╰──╰────────────────────────────────────────────────────╯──╯
+ j/k scroll  •  Esc close

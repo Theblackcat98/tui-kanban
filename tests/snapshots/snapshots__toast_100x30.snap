@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
                     │                                                                              │
                     │                                                                              │
                     ╰──────────────────────────────────────────────────────────────────────────────╯
- tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •  ? help   Task saved
+ Tab rail  •  j/k card  •  h/l column  •  v view  •  n new  •  Enter open  •  e edit  •  H/L move

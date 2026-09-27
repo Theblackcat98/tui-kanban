@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use clap::Parser;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::animation::{AnimationEngine, AnimationKind, AnimationSettings};
 use crate::clock::Clock;
+use crate::command::{self, CommandId, Context};
 use crate::domain::{Board, BoardError, Task};
 use crate::layout::Breakpoint;
 use crate::storage::JsonStore;
@@ -101,6 +102,30 @@ impl TextInput {
 
     pub fn end(&mut self) {
         self.cursor = self.value.len();
+    }
+
+    /// Applies an editing key. Returns whether the value changed.
+    pub fn handle_key(&mut self, key: &KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Backspace => self.backspace(),
+            KeyCode::Delete => self.delete(),
+            KeyCode::Left => self.move_left(),
+            KeyCode::Right => self.move_right(),
+            KeyCode::Home => self.home(),
+            KeyCode::End => self.end(),
+            KeyCode::Char(character)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                self.insert(character)
+            }
+            _ => return false,
+        }
+        matches!(
+            key.code,
+            KeyCode::Backspace | KeyCode::Delete | KeyCode::Char(_)
+        )
     }
 
     fn clamp_cursor(&mut self) {
@@ -275,25 +300,164 @@ impl App {
             return;
         }
         self.clock = clock;
-        if key.modifiers.contains(KeyModifiers::CONTROL)
-            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
-        {
-            self.should_quit = true;
-            return;
+        let context = self.context();
+        match command::lookup(context, &key) {
+            Some(id) => self.execute(id),
+            None => self.handle_unbound_key(context, key),
         }
+    }
 
-        match self.mode.clone() {
-            Mode::Dashboard => self.handle_dashboard_key(key),
-            Mode::Editor(mut editor) => {
-                self.handle_editor_key(key, &mut editor);
-                if matches!(self.mode, Mode::Editor(_)) {
-                    self.mode = Mode::Editor(editor);
+    /// Where the user is, which decides what keys mean.
+    pub fn context(&self) -> Context {
+        match &self.mode {
+            Mode::Help => Context::Help,
+            Mode::ConfirmDelete(_) => Context::Confirm,
+            Mode::Editor(_) => Context::Editor,
+            Mode::Detail(_) => Context::Detail,
+            Mode::Dashboard if self.search_active => Context::Search,
+            Mode::Dashboard if self.focus == FocusRegion::Rail => Context::Rail,
+            Mode::Dashboard => match self.view_mode {
+                ViewMode::Board => Context::Board,
+                ViewMode::AllTasks => Context::AllTasks,
+            },
+        }
+    }
+
+    /// Whether a command would do anything right now. Used to leave out
+    /// footer hints that don't apply, such as "clear" with no search.
+    pub fn command_enabled(&self, id: CommandId) -> bool {
+        match id {
+            CommandId::ClearSearch => self.search_active || !self.search_query.is_empty(),
+            CommandId::ToggleFocus => self.breakpoint().shows_rail(),
+            _ => true,
+        }
+    }
+
+    fn execute(&mut self, id: CommandId) {
+        match id {
+            CommandId::PreviousColumn | CommandId::RailPrevious => self.move_column(-1),
+            CommandId::NextColumn | CommandId::RailNext => self.move_column(1),
+            CommandId::PreviousCard => self.move_task_vertical(-1),
+            CommandId::NextCard => self.move_task_vertical(1),
+            CommandId::PageUp => self.move_task_vertical(-5),
+            CommandId::PageDown => self.move_task_vertical(5),
+            CommandId::FirstCard => self.select_first_visible_task(),
+            CommandId::LastCard => self.select_last_visible_task(),
+            CommandId::RailFirst => self.select_column(0),
+            CommandId::RailLast => self.select_column(self.board.columns.len().saturating_sub(1)),
+            CommandId::FocusCards => self.focus = FocusRegion::Cards,
+            CommandId::ToggleFocus => {
+                self.focus = match self.focus {
+                    FocusRegion::Rail => FocusRegion::Cards,
+                    // The rail can only take focus while it is on screen.
+                    FocusRegion::Cards if self.breakpoint().shows_rail() => FocusRegion::Rail,
+                    FocusRegion::Cards => FocusRegion::Cards,
+                };
+            }
+            CommandId::ToggleView => {
+                self.view_mode = match self.view_mode {
+                    ViewMode::Board => ViewMode::AllTasks,
+                    ViewMode::AllTasks => ViewMode::Board,
+                };
+                self.all_tasks_scroll = 0;
+                self.focus = FocusRegion::Cards;
+                self.reconcile_selection();
+                self.animate(AnimationKind::Selection, 140);
+            }
+            CommandId::OpenDetail => self.open_detail(),
+            CommandId::NewTask => {
+                self.mode = Mode::Editor(EditorState::new());
+                self.animate(AnimationKind::Modal, 180);
+            }
+            CommandId::EditTask => self.open_editor(),
+            CommandId::DeleteTask => self.open_delete_confirmation(),
+            CommandId::MoveTaskLeft => self.move_selected_task(-1),
+            CommandId::MoveTaskRight => self.move_selected_task(1),
+            CommandId::Search => {
+                self.search_active = true;
+                self.search_input = TextInput::new(self.search_query.clone());
+                self.focus = FocusRegion::Cards;
+                self.animate(AnimationKind::Selection, 120);
+            }
+            CommandId::ClearSearch => self.clear_search(),
+            CommandId::ApplySearch => self.search_active = false,
+            CommandId::ScrollUp => self.detail_scroll = self.detail_scroll.saturating_sub(3),
+            CommandId::ScrollDown => self.detail_scroll = self.detail_scroll.saturating_add(3),
+            CommandId::CloseDetail => {
+                self.mode = Mode::Dashboard;
+                self.detail_scroll = 0;
+            }
+            CommandId::NextField => {
+                if let Mode::Editor(editor) = &mut self.mode {
+                    editor.field = match editor.field {
+                        EditorField::Title => EditorField::Description,
+                        EditorField::Description => EditorField::Title,
+                    };
                 }
             }
-            Mode::Detail(_) => self.handle_detail_key(key),
-            Mode::Help => self.handle_help_key(key),
-            Mode::ConfirmDelete(_) => self.handle_confirm_key(key),
+            CommandId::SaveTask => {
+                if let Mode::Editor(mut editor) = std::mem::replace(&mut self.mode, Mode::Dashboard)
+                {
+                    self.submit_editor(&mut editor);
+                    if matches!(self.mode, Mode::Dashboard) && editor.error.is_some() {
+                        self.mode = Mode::Editor(editor);
+                    }
+                }
+            }
+            CommandId::CancelEdit => {
+                self.mode = Mode::Dashboard;
+                self.animate(AnimationKind::Modal, 140);
+            }
+            CommandId::ConfirmDelete => {
+                if let Mode::ConfirmDelete(id) = self.mode {
+                    self.delete_task(id);
+                }
+            }
+            CommandId::CancelDelete => self.mode = Mode::Dashboard,
+            CommandId::HelpScrollUp => self.help_scroll = self.help_scroll.saturating_sub(1),
+            CommandId::HelpScrollDown => {
+                let max_scroll = ui::help_line_count().saturating_sub(1) as u16;
+                self.help_scroll = self.help_scroll.saturating_add(1).min(max_scroll);
+            }
+            CommandId::CloseHelp => self.mode = Mode::Dashboard,
+            CommandId::Help => {
+                self.mode = Mode::Help;
+                self.help_scroll = 0;
+                self.animate(AnimationKind::Modal, 180);
+            }
+            CommandId::Quit | CommandId::ForceQuit => self.should_quit = true,
         }
+    }
+
+    /// Keys that no command claims: typing in the editor and the search
+    /// box, and "any other key closes" in help.
+    fn handle_unbound_key(&mut self, context: Context, key: KeyEvent) {
+        match context {
+            Context::Search => {
+                if self.search_input.handle_key(&key) {
+                    self.search_query = self.search_input.value.clone();
+                    self.reconcile_selection();
+                }
+            }
+            Context::Editor => {
+                if let Mode::Editor(editor) = &mut self.mode {
+                    let input = match editor.field {
+                        EditorField::Title => &mut editor.title,
+                        EditorField::Description => &mut editor.description,
+                    };
+                    if input.handle_key(&key) {
+                        editor.error = None;
+                    }
+                }
+            }
+            Context::Help => self.mode = Mode::Dashboard,
+            _ => {}
+        }
+    }
+
+    fn animate(&mut self, kind: AnimationKind, millis: u64) {
+        self.animations
+            .start(kind, Duration::from_millis(millis), self.clock.instant);
     }
 
     /// Records the new terminal size. Focus leaves the rail if it is no
@@ -416,230 +580,6 @@ impl App {
             SaveState::Clean => "saved".to_owned(),
             SaveState::Dirty => "saving".to_owned(),
             SaveState::Error(message) => format!("save error: {message}"),
-        }
-    }
-
-    fn handle_dashboard_key(&mut self, key: KeyEvent) {
-        if self.search_active {
-            self.handle_search_key(key);
-            return;
-        }
-        if key.code == KeyCode::Esc && !self.search_query.is_empty() {
-            self.clear_search();
-            return;
-        }
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') => self.should_quit = true,
-            KeyCode::Char('n') | KeyCode::Char('N') => {
-                self.mode = Mode::Editor(EditorState::new());
-                self.animations.start(
-                    AnimationKind::Modal,
-                    Duration::from_millis(180),
-                    self.clock.instant,
-                );
-            }
-            KeyCode::Char('e') | KeyCode::Char('E') => self.open_editor(),
-            KeyCode::Char('d') | KeyCode::Char('D') => self.open_delete_confirmation(),
-            KeyCode::Char('?') => {
-                self.mode = Mode::Help;
-                self.help_scroll = 0;
-                self.animations.start(
-                    AnimationKind::Modal,
-                    Duration::from_millis(180),
-                    self.clock.instant,
-                );
-            }
-            KeyCode::Char('/') => {
-                self.search_active = true;
-                self.search_input = TextInput::new(self.search_query.clone());
-                self.focus = FocusRegion::Cards;
-                self.animations.start(
-                    AnimationKind::Selection,
-                    Duration::from_millis(120),
-                    self.clock.instant,
-                );
-            }
-            KeyCode::Tab | KeyCode::BackTab => {
-                self.focus = match self.focus {
-                    FocusRegion::Rail => FocusRegion::Cards,
-                    // The rail can only take focus while it is on screen.
-                    FocusRegion::Cards if self.breakpoint().shows_rail() => FocusRegion::Rail,
-                    FocusRegion::Cards => FocusRegion::Cards,
-                };
-            }
-            KeyCode::Char('v') | KeyCode::Char('V') => {
-                self.view_mode = match self.view_mode {
-                    ViewMode::Board => ViewMode::AllTasks,
-                    ViewMode::AllTasks => ViewMode::Board,
-                };
-                self.all_tasks_scroll = 0;
-                self.focus = FocusRegion::Cards;
-                self.reconcile_selection();
-                self.animations.start(
-                    AnimationKind::Selection,
-                    Duration::from_millis(140),
-                    self.clock.instant,
-                );
-            }
-            KeyCode::Char('H') => self.move_selected_task(-1),
-            KeyCode::Char('L') => self.move_selected_task(1),
-            _ => self.handle_dashboard_navigation_key(key),
-        }
-    }
-
-    fn handle_dashboard_navigation_key(&mut self, key: KeyEvent) {
-        match self.focus {
-            FocusRegion::Rail => match key.code {
-                KeyCode::Left | KeyCode::Char('h') | KeyCode::Up | KeyCode::Char('k') => {
-                    self.move_column(-1)
-                }
-                KeyCode::Right | KeyCode::Char('l') | KeyCode::Down | KeyCode::Char('j') => {
-                    self.move_column(1)
-                }
-                KeyCode::Home => self.select_column(0),
-                KeyCode::End => self.select_column(self.board.columns.len().saturating_sub(1)),
-                KeyCode::Enter => self.focus = FocusRegion::Cards,
-                _ => {}
-            },
-            FocusRegion::Cards => match key.code {
-                KeyCode::Left | KeyCode::Char('h') => self.move_column(-1),
-                KeyCode::Right | KeyCode::Char('l') => self.move_column(1),
-                KeyCode::Up | KeyCode::Char('k') => self.move_task_vertical(-1),
-                KeyCode::Down | KeyCode::Char('j') => self.move_task_vertical(1),
-                KeyCode::PageUp => self.move_task_vertical(-5),
-                KeyCode::PageDown => self.move_task_vertical(5),
-                KeyCode::Home => self.select_first_visible_task(),
-                KeyCode::End => self.select_last_visible_task(),
-                KeyCode::Enter => self.open_detail(),
-                _ => {}
-            },
-        }
-    }
-
-    fn handle_search_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc => self.clear_search(),
-            KeyCode::Enter => self.search_active = false,
-            KeyCode::Backspace => {
-                self.search_input.backspace();
-                self.search_query = self.search_input.value.clone();
-                self.reconcile_selection();
-            }
-            KeyCode::Delete => {
-                self.search_input.delete();
-                self.search_query = self.search_input.value.clone();
-                self.reconcile_selection();
-            }
-            KeyCode::Left => self.search_input.move_left(),
-            KeyCode::Right => self.search_input.move_right(),
-            KeyCode::Home => self.search_input.home(),
-            KeyCode::End => self.search_input.end(),
-            KeyCode::Char(character)
-                if !key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::ALT) =>
-            {
-                self.search_input.insert(character);
-                self.search_query = self.search_input.value.clone();
-                self.reconcile_selection();
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_editor_key(&mut self, key: KeyEvent, editor: &mut EditorState) {
-        match key.code {
-            KeyCode::Esc => {
-                self.mode = Mode::Dashboard;
-                self.animations.start(
-                    AnimationKind::Modal,
-                    Duration::from_millis(140),
-                    self.clock.instant,
-                );
-            }
-            KeyCode::Tab | KeyCode::BackTab => {
-                editor.field = match editor.field {
-                    EditorField::Title => EditorField::Description,
-                    EditorField::Description => EditorField::Title,
-                };
-            }
-            KeyCode::Enter => self.submit_editor(editor),
-            KeyCode::Backspace => match editor.field {
-                EditorField::Title => editor.title.backspace(),
-                EditorField::Description => editor.description.backspace(),
-            },
-            KeyCode::Delete => match editor.field {
-                EditorField::Title => editor.title.delete(),
-                EditorField::Description => editor.description.delete(),
-            },
-            KeyCode::Left => match editor.field {
-                EditorField::Title => editor.title.move_left(),
-                EditorField::Description => editor.description.move_left(),
-            },
-            KeyCode::Right => match editor.field {
-                EditorField::Title => editor.title.move_right(),
-                EditorField::Description => editor.description.move_right(),
-            },
-            KeyCode::Home => match editor.field {
-                EditorField::Title => editor.title.home(),
-                EditorField::Description => editor.description.home(),
-            },
-            KeyCode::End => match editor.field {
-                EditorField::Title => editor.title.end(),
-                EditorField::Description => editor.description.end(),
-            },
-            KeyCode::Char(character)
-                if !key.modifiers.contains(KeyModifiers::CONTROL)
-                    && !key.modifiers.contains(KeyModifiers::ALT) =>
-            {
-                match editor.field {
-                    EditorField::Title => editor.title.insert(character),
-                    EditorField::Description => editor.description.insert(character),
-                }
-                editor.error = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_detail_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc => {
-                self.mode = Mode::Dashboard;
-                self.detail_scroll = 0;
-            }
-            KeyCode::Char('e') | KeyCode::Char('E') => self.open_editor(),
-            KeyCode::Char('d') | KeyCode::Char('D') => self.open_delete_confirmation(),
-            KeyCode::Char('H') => self.move_selected_task(-1),
-            KeyCode::Char('L') => self.move_selected_task(1),
-            KeyCode::PageUp => self.detail_scroll = self.detail_scroll.saturating_sub(3),
-            KeyCode::PageDown => self.detail_scroll = self.detail_scroll.saturating_add(3),
-            _ => {}
-        }
-    }
-
-    fn handle_help_key(&mut self, key: KeyEvent) {
-        let max_scroll = ui::help_line_count().saturating_sub(1) as u16;
-        match key.code {
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.help_scroll = self.help_scroll.saturating_add(1).min(max_scroll);
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.help_scroll = self.help_scroll.saturating_sub(1);
-            }
-            _ => self.mode = Mode::Dashboard,
-        }
-    }
-
-    fn handle_confirm_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
-                if let Mode::ConfirmDelete(id) = self.mode.clone() {
-                    self.delete_task(id);
-                }
-            }
-            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => self.mode = Mode::Dashboard,
-            _ => {}
         }
     }
 

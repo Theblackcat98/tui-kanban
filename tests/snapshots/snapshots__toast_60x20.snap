@@ -21,4 +21,4 @@ expression: "harness.screen(60, 20)"
 │                                                          │
 │                                                          │
 ╰──────────────────────────────────────────────────────────╯
- tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •
+ j/k card  •  h/l column  •  v view  •  n new   Task saved

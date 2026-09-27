@@ -4,6 +4,7 @@ use super::{render_clear, short_id, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::App;
 use crate::clock::Clock;
+use crate::command::Context;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -147,7 +148,10 @@ pub(crate) fn render(
     );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            " e edit  •  H/L move  •  d delete  •  esc close",
+            format!(
+                " {}",
+                super::hint_text(app, Context::Detail, inner.width.saturating_sub(1) as usize)
+            ),
             muted_style(app),
         )))
         .style(surface_style(app))

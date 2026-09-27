@@ -3,22 +3,22 @@ source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
  TUI KANBAN   Snapshot Board                         saved
-╭─────╭ Keyboard shortcuts ──────────────────────────╮─────╮
-│ Back│   e                edit task                 │     │
-│╭────│   d                delete task               │────╮│
-││Writ│   H / L            move task to column       │    ││
-││    │   Enter            open details              │    ││
-││Cove│   /                search                    │    ││
-││ Bac│                                              │    ││
-│╰────│ Details                                      │────╯│
-│╭────│   PageUp / PageDn  scroll description        │────╮│
-││Reco│   H / L            move task from drawer     │    ││
-││    │                                              │    ││
-││Comm│ General                                      │    ││
-││ Bac│   ?                this help                 │    ││
-│╰────│   Esc              close or cancel           │────╯│
-│     │   q / Ctrl+C       quit                      │     │
-│     │                                              │     │
-│     │ j/k scroll  •  esc close                     │     │
-╰─────╰──────────────────────────────────────────────╯─────╯
- j/k scroll  •  any other key close
+╭──╭ Keyboard shortcuts ────────────────────────────────╮──╮
+│ B│ Editor, search and dialogs                         │  │
+│╭─│   Enter               search: apply                │─╮│
+││W│   Tab / Shift+Tab     editor: switch field         │ ││
+││ │   Enter               editor: save                 │ ││
+││C│   Esc                 editor: cancel               │ ││
+││ │   y                   delete: confirm              │ ││
+│╰─│   n / Esc             delete: cancel               │─╯│
+│╭─│                                                    │─╮│
+││R│ General                                            │ ││
+││ │   j/k  ↓/↑            help: scroll down / up       │ ││
+││C│   Esc / q / ?         help: close                  │ ││
+││ │   ?                   this help                    │ ││
+│╰─│   q                   quit                         │─╯│
+│  │   Ctrl+C              quit (anywhere)              │  │
+│  │                                                    │  │
+│  │ j/k scroll  •  esc close                           │  │
+╰──╰────────────────────────────────────────────────────╯──╯
+ j/k scroll  •  Esc close

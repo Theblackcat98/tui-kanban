@@ -29,6 +29,6 @@ expression: "harness.screen(100, 30)"
                     │                                       │                                      │
                     │                                       │created 1d                            │
                     │                                       │updated 3h  •  id 00000000            │
-                    │                                       │e edit  •  H/L move  •  d delete  •   │
-                    ╰───────────────────────────────────────│esc close                             │
- e edit  •  H/L move  •  PgUp/PgDn scroll  •  esc close     ╰──────────────────────────────────────╯
+                    │                                       │e edit  •  H/L move  •  d delete      │
+                    ╰───────────────────────────────────────│                                      │
+ e edit  •  H/L move  •  d delete  •  Esc close  •  PgUp/PgD╰──────────────────────────────────────╯

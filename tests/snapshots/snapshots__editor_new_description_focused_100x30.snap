@@ -21,7 +21,7 @@ expression: "harness.screen(100, 30)"
               │            │                                                        ││            ││
               │            │                                                        ││            ││
               │            ╰────────────────────────────────────────────────────────╯│            ││
-              │Enter saves • Tab switches fields • Esc cancels                       │            ││
+              │Enter save  •  Tab switch field  •  Esc cancel                        │            ││
               │                                                                      │────────────╯│
               ╰──────────────────────────────────────────────────────────────────────╯             │
                     │                                                                              │
@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
                     │                                                                              │
                     │                                                                              │
                     ╰──────────────────────────────────────────────────────────────────────────────╯
- tab switch  •  enter save  •  esc cancel
+ Enter save  •  Tab switch field  •  Esc cancel

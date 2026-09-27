@@ -19,6 +19,6 @@ expression: "harness.screen(60, 20)"
 │╰──────────────────────────│                              │
 │                           │created 2d                    │
 │                           │updated 1d  •  id 00000000    │
-│                           │e edit  •  H/L move  •  d     │
-╰───────────────────────────│delete  •  esc close          │
- e edit  •  H/L move  •  PgU╰──────────────────────────────╯
+│                           │e edit  •  H/L move           │
+╰───────────────────────────│                              │
+ e edit  •  H/L move  •  d d╰──────────────────────────────╯

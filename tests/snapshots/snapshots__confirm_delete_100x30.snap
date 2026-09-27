@@ -15,7 +15,7 @@ expression: "harness.screen(100, 30)"
                     ││Reco╭ Delete task ─────────────────────────────────╮                        ││
                     ││    │Delete Write the README?                      │                        ││
                     ││Comm│                                              │                        ││
-                    ││ Bac│y confirm  •  n cancel                        │                        ││
+                    ││ Bac│y delete  •  n cancel                         │                        ││
                     │╰────│                                              │────────────────────────╯│
                     │╭────│                                              │────────────────────────╮│
                     ││Pack│                                              │                        ││
@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
                     │                                                                              │
                     │                                                                              │
                     ╰──────────────────────────────────────────────────────────────────────────────╯
- y confirm  •  n cancel
+ y delete  •  n cancel

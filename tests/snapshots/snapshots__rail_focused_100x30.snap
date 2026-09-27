@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
                     │                                                                              │
                     │                                                                              │
                     ╰──────────────────────────────────────────────────────────────────────────────╯
- tab cards  •  h/l column  •  enter focus  •  v view  •  ? help
+ Tab rail  •  j/k column  •  Enter focus  •  v view  •  n new  •  / search  •  ? help

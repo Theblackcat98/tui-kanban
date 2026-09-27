@@ -31,4 +31,4 @@ expression: "harness.screen(width, height)"
                     │Set up CI                             │ │Snapshot tests                       │
                     │                                      │ │                                     │
                     │fmt, clippy and tests.                │ │No description                       │
- tab rail  •  v view  •  j/k cards  •  h/l column  •  n new  •  ? help  updated 1d─────────────────╯
+ Tab rail  •  j/k card  •  h/l column  •  v view  •  n new  •  Enter open  •  e edit  •  H/L move ─╯

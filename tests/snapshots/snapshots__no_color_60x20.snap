@@ -24,7 +24,7 @@ Buffer {
         "│                                                          │",
         "│                                                          │",
         "╰──────────────────────────────────────────────────────────╯",
-        " tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •  ",
+        " j/k card  •  h/l column  •  v view  •  n new               ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
@@ -52,5 +52,6 @@ Buffer {
         x: 2, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 58, y: 12, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 0, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 46, y: 19, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

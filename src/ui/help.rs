@@ -3,125 +3,119 @@ use super::{centered_rect, render_clear, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::App;
 use crate::clock::Clock;
+use crate::command::{COMMANDS, Context, Group};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
+use unicode_width::UnicodeWidthStr;
 
-const SECTIONS: &[(&str, &[(&str, &str)])] = &[
-    (
-        "Navigation",
-        &[
-            ("v", "toggle Board / All tasks"),
-            ("Tab", "focus rail / cards"),
-            ("h / l or ← / →", "select column"),
-            ("j / k or ↑ / ↓", "select card"),
-            ("Home / End", "first / last card"),
-            ("PageUp / PageDn", "move by five cards"),
-        ],
-    ),
-    (
-        "Tasks",
-        &[
-            ("n", "new task"),
-            ("e", "edit task"),
-            ("d", "delete task"),
-            ("H / L", "move task to column"),
-            ("Enter", "open details"),
-            ("/", "search"),
-        ],
-    ),
-    (
-        "Details",
-        &[
-            ("PageUp / PageDn", "scroll description"),
-            ("H / L", "move task from drawer"),
-        ],
-    ),
-    (
-        "General",
-        &[
-            ("?", "this help"),
-            ("Esc", "close or cancel"),
-            ("q / Ctrl+C", "quit"),
-        ],
-    ),
-];
-
-const KEY_WIDTH: usize = 17;
-const COLUMN_WIDTH: u16 = 44;
 const COLUMN_GAP: u16 = 2;
 
-/// The help lines as one column, or as two columns side by side.
-fn help_columns(app: &App, columns: usize) -> Vec<Vec<Line<'static>>> {
+/// One help section: a group title and its (keys, label) rows, generated
+/// from the command table.
+struct Section {
+    title: &'static str,
+    rows: Vec<(String, &'static str)>,
+}
+
+fn sections() -> Vec<Section> {
+    Group::ALL
+        .iter()
+        .map(|group| Section {
+            title: group.title(),
+            rows: COMMANDS
+                .iter()
+                .filter(|command| command.group == *group && !command.is_paired_into_another())
+                .map(|command| (command.keys_label(), command.help_label()))
+                .collect(),
+        })
+        .filter(|section| !section.rows.is_empty())
+        .collect()
+}
+
+fn section_height(section: &Section) -> usize {
+    section.rows.len() + 2
+}
+
+fn key_width(sections: &[Section]) -> usize {
+    sections
+        .iter()
+        .flat_map(|section| section.rows.iter())
+        .map(|(keys, _)| keys.width())
+        .max()
+        .unwrap_or(0)
+        + 2
+}
+
+fn column_width(sections: &[Section]) -> u16 {
+    let label_width = sections
+        .iter()
+        .flat_map(|section| section.rows.iter())
+        .map(|(_, label)| label.width())
+        .max()
+        .unwrap_or(0);
+    (2 + key_width(sections) + label_width) as u16
+}
+
+/// One column of help lines, sized to its own content.
+fn help_column(app: &App, sections: &[Section]) -> (Vec<Line<'static>>, u16) {
     let heading = Style::default()
         .fg(app.theme.accent_alt)
         .add_modifier(Modifier::BOLD);
-    let split = if columns == 2 {
-        balanced_split()
-    } else {
-        SECTIONS.len()
-    };
-    let (left, right) = SECTIONS.split_at(split);
-    [left, right]
-        .into_iter()
-        .filter(|sections| !sections.is_empty())
-        .map(|sections| {
-            let mut lines = Vec::new();
-            for (index, (title, keys)) in sections.iter().enumerate() {
-                if index > 0 {
-                    lines.push(Line::default());
-                }
-                lines.push(Line::from(Span::styled(*title, heading)));
-                for (key, description) in *keys {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            format!("  {key:<KEY_WIDTH$}"),
-                            Style::default().fg(app.theme.text),
-                        ),
-                        Span::styled(*description, Style::default().fg(app.theme.text)),
-                    ]));
-                }
-            }
-            lines
-        })
-        .collect()
+    let keys_width = key_width(sections);
+    let mut lines = Vec::new();
+    for (index, section) in sections.iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::default());
+        }
+        lines.push(Line::from(Span::styled(section.title, heading)));
+        for (keys, label) in &section.rows {
+            let padding = " ".repeat(keys_width.saturating_sub(keys.width()));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {keys}{padding}"),
+                    Style::default().fg(app.theme.text),
+                ),
+                Span::styled(*label, Style::default().fg(app.theme.text)),
+            ]));
+        }
+    }
+    (lines, column_width(sections))
 }
 
 /// Where to split the sections into two columns so the taller column is
 /// as short as possible.
-fn balanced_split() -> usize {
-    let height = |sections: &[(&str, &[(&str, &str)])]| {
-        sections
-            .iter()
-            .map(|(_, keys)| keys.len() + 2)
-            .sum::<usize>()
-    };
-    (1..SECTIONS.len())
-        .min_by_key(|&split| height(&SECTIONS[..split]).max(height(&SECTIONS[split..])))
-        .unwrap_or(SECTIONS.len())
+fn balanced_split(sections: &[Section]) -> usize {
+    let height = |sections: &[Section]| sections.iter().map(section_height).sum::<usize>();
+    (1..sections.len())
+        .min_by_key(|&split| height(&sections[..split]).max(height(&sections[split..])))
+        .unwrap_or(sections.len())
 }
 
 /// The number of lines the help overlay can scroll through at most.
 pub(crate) fn line_count() -> usize {
-    SECTIONS
-        .iter()
-        .map(|(_, keys)| keys.len() + 2)
-        .sum::<usize>()
-        - 1
+    sections().iter().map(section_height).sum::<usize>() - 1
 }
 
 pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
+    let sections = sections();
     let available_width = area.width.saturating_sub(2);
-    let two_columns = available_width >= COLUMN_WIDTH * 2 + COLUMN_GAP + 4;
-    let columns = help_columns(app, if two_columns { 2 } else { 1 });
-    let content_height = columns.iter().map(Vec::len).max().unwrap_or(0) as u16;
-    let content_width = if two_columns {
-        COLUMN_WIDTH * 2 + COLUMN_GAP
+    let (left, right) = sections.split_at(balanced_split(&sections));
+    let two_columns = available_width >= column_width(left) + column_width(right) + COLUMN_GAP + 4;
+    let columns = if two_columns {
+        vec![help_column(app, left), help_column(app, right)]
     } else {
-        COLUMN_WIDTH
+        vec![help_column(app, &sections)]
     };
+    let content_height = columns
+        .iter()
+        .map(|(lines, _)| lines.len())
+        .max()
+        .unwrap_or(0) as u16;
+    let content_width = columns.iter().map(|(_, width)| width).sum::<u16>()
+        + COLUMN_GAP * (columns.len() as u16 - 1);
     // Border, a blank line and the footer hint around the content.
     let full_width = (content_width + 4).min(available_width);
     let full_height = (content_height + 4).min(area.height.saturating_sub(2));
@@ -163,19 +157,16 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock)
     );
     let max_scroll = content_height.saturating_sub(body.height);
     let scroll = app.help_scroll.min(max_scroll);
-    let column_width = if two_columns {
-        (body.width.saturating_sub(COLUMN_GAP)) / 2
-    } else {
-        body.width
-    };
-    for (index, lines) in columns.into_iter().enumerate() {
-        let x = body.x + (column_width + COLUMN_GAP) * index as u16;
+    let mut x = body.x;
+    for (lines, width) in columns {
+        let width = width.min(body.right().saturating_sub(x));
         frame.render_widget(
             Paragraph::new(lines)
                 .style(surface_style(app))
                 .scroll((scroll, 0)),
-            Rect::new(x, body.y, column_width, body.height),
+            Rect::new(x, body.y, width, body.height),
         );
+        x = x.saturating_add(width + COLUMN_GAP);
     }
 
     let hint = if scroll < max_scroll {
@@ -243,7 +234,10 @@ pub(crate) fn render_confirm(
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from(Span::styled(" y confirm  •  n cancel", muted_style(app))),
+            Line::from(Span::styled(
+                format!(" {}", super::hint_text(app, Context::Confirm, usize::MAX)),
+                muted_style(app),
+            )),
         ])
         .style(Style::default().fg(app.theme.text).bg(app.theme.surface))
         .wrap(Wrap { trim: true }),

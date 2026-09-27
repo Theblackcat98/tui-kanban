@@ -8,6 +8,7 @@ mod task_editor;
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{App, Mode, SaveState, ToastKind};
 use crate::clock::Clock;
+use crate::command::{self, Context};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::Color;
@@ -100,20 +101,7 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
-    let hints = match &app.mode {
-        Mode::Dashboard if app.search_active => "type to search  •  enter search  •  esc clear",
-        Mode::Dashboard if app.focus == crate::app::FocusRegion::Rail => {
-            "tab cards  •  h/l column  •  enter focus  •  v view  •  ? help"
-        }
-        Mode::Dashboard if app.view_mode == crate::app::ViewMode::AllTasks => {
-            "tab rail  •  v view  •  j/k cards  •  h/l column  •  n new  •  ? help"
-        }
-        Mode::Dashboard => "tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •  ? help",
-        Mode::Editor(_) => "tab switch  •  enter save  •  esc cancel",
-        Mode::Detail(_) => "e edit  •  H/L move  •  PgUp/PgDn scroll  •  esc close",
-        Mode::Help => "j/k scroll  •  any other key close",
-        Mode::ConfirmDelete(_) => "y confirm  •  n cancel",
-    };
+    let hints = hint_text(app, app.context(), area.width.saturating_sub(2) as usize);
     let mut spans = vec![Span::styled(format!(" {hints} "), muted_style(app))];
     if let Some(toast) = &app.toast {
         let color = match toast.kind {
@@ -133,6 +121,22 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
         ));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// The footer hints for a context from the command table, joined with
+/// " • " and cut to whole hints that fit in `max_width` cells.
+pub(crate) fn hint_text(app: &App, context: Context, max_width: usize) -> String {
+    let mut text = String::new();
+    for (keys, label) in command::hints(context, |id| app.command_enabled(id)) {
+        let hint = format!("{keys} {label}");
+        let separator = if text.is_empty() { "" } else { "  •  " };
+        if text.width() + separator.width() + hint.width() > max_width {
+            break;
+        }
+        text.push_str(separator);
+        text.push_str(&hint);
+    }
+    text
 }
 
 pub(crate) fn help_line_count() -> usize {

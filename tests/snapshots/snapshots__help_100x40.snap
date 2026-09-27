@@ -10,29 +10,29 @@ expression: "harness.screen(100, 40)"
    Done    2        ││                                                                            ││
                     ││Cover install, usage, keys and the file format.                             ││
                     ││ Backlog  •  updated 1d                                                     ││
-                    │╰────────────────────────────────────────────────────────────────────────────╯│
-                    │╭────────────────────────────────────────────────────────────────────────────╮│
-   ╭ Keyboard shortcuts ────────────────────────────────────────────────────────────────────────╮ ││
-   │ Navigation                                    Details                                      │ ││
-   │   v                toggle Board / All tasks     PageUp / PageDn  scroll description        │ ││
-   │   Tab              focus rail / cards           H / L            move task from drawer     │ ││
-   │   h / l or ← / →   select column                                                           │─╯│
-   │   j / k or ↑ / ↓   select card                General                                      │─╮│
-   │   Home / End       first / last card            ?                this help                 │ ││
-   │   PageUp / PageDn  move by five cards           Esc              close or cancel           │ ││
-   │                                                 q / Ctrl+C       quit                      │ ││
-   │ Tasks                                                                                      │ ││
-   │   n                new task                                                                │─╯│
-   │   e                edit task                                                               │  │
-   │   d                delete task                                                             │  │
-   │   H / L            move task to column                                                     │  │
-   │   Enter            open details                                                            │  │
-   │   /                search                                                                  │  │
-   │                                                                                            │  │
-   │ Press any key to return                                                                    │  │
-   ╰────────────────────────────────────────────────────────────────────────────────────────────╯  │
-                    │                                                                              │
-                    │                                                                              │
+ ╭ Keyboard shortcuts ───────────────────────────────────────────────────────────────────────────╮╯│
+ │ Navigation                                          Details                                   │╮│
+ │   h/l  ←/→            previous / next column          PgUp/PgDn        scroll up / down       │││
+ │   j/k  ↓/↑            next / previous card            Esc              close details          │││
+ │   PgUp/PgDn           up / down five cards                                                    │││
+ │   Home/End            first / last card             Editor, search and dialogs                │││
+ │   j/k  ↓/↑  l/h  →/←  rail: next / previous column    Enter            search: apply          │╯│
+ │   Home/End            rail: first / last column       Tab / Shift+Tab  editor: switch field   │╮│
+ │   Enter               rail: focus cards               Enter            editor: save           │││
+ │   Tab / Shift+Tab     focus rail / cards              Esc              editor: cancel         │││
+ │   v                   Board / All tasks               y                delete: confirm        │││
+ │                                                       n / Esc          delete: cancel         │││
+ │ Tasks                                                                                         │╯│
+ │   Enter               open details                  General                                   │ │
+ │   n                   new task                        j/k  ↓/↑         help: scroll down / up │ │
+ │   e                   edit task                       Esc / q / ?      help: close            │ │
+ │   d                   delete task                     ?                this help              │ │
+ │   H/L                 move task left / right          q                quit                   │ │
+ │   /                   search                          Ctrl+C           quit (anywhere)        │ │
+ │   Esc                 clear search                                                            │ │
+ │                                                                                               │ │
+ │ Press any key to return                                                                       │ │
+ ╰───────────────────────────────────────────────────────────────────────────────────────────────╯ │
                     │                                                                              │
                     │                                                                              │
                     │                                                                              │
@@ -41,4 +41,4 @@ expression: "harness.screen(100, 40)"
                     │                                                                              │
                     │                                                                              │
                     ╰──────────────────────────────────────────────────────────────────────────────╯
- j/k scroll  •  any other key close
+ j/k scroll  •  Esc close
