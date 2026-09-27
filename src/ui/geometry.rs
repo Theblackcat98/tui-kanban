@@ -21,6 +21,8 @@ pub(crate) struct Page {
     pub main: Rect,
     /// Where the detail drawer goes, while one is open.
     pub drawer: Option<Rect>,
+    /// The first-run tip, above the status line, while it shows.
+    pub tip: Option<Rect>,
     pub status: Rect,
 }
 
@@ -33,11 +35,20 @@ pub(crate) fn page(model: &Model, area: Rect) -> Page {
         area.width,
         1.min(area.height),
     );
+    let tip_rows = u16::from(model.ui.tip);
+    let tip = model.ui.tip.then(|| {
+        Rect::new(
+            area.x,
+            area.bottom().saturating_sub(2),
+            area.width,
+            1.min(area.height),
+        )
+    });
     let body = Rect::new(
         area.x,
         area.y.saturating_add(1),
         area.width,
-        area.height.saturating_sub(2),
+        area.height.saturating_sub(2 + tip_rows),
     );
     let (rail, rest) = if breakpoint.shows_rail() {
         let (rail, rest) = split_left(body, RAIL_WIDTH);
@@ -69,6 +80,7 @@ pub(crate) fn page(model: &Model, area: Rect) -> Page {
         rail,
         main,
         drawer,
+        tip,
         status,
     }
 }

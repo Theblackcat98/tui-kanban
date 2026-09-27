@@ -8,7 +8,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Where the user is, which decides what keys mean.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
+#[repr(u32)]
 pub enum Context {
     /// The Board view with a card list focused.
     Board = 1 << 0,
@@ -24,10 +24,14 @@ pub enum Context {
     Confirm = 1 << 7,
     /// The terminal is too small to use.
     TooSmall = 1 << 8,
+    /// The "move to…" menu.
+    MoveTo = 1 << 9,
+    /// The quick-add prompt.
+    QuickAdd = 1 << 10,
 }
 
 impl Context {
-    pub const ALL: [Context; 9] = [
+    pub const ALL: [Context; 11] = [
         Context::Board,
         Context::AllTasks,
         Context::Rail,
@@ -37,37 +41,88 @@ impl Context {
         Context::Help,
         Context::Confirm,
         Context::TooSmall,
+        Context::MoveTo,
+        Context::QuickAdd,
     ];
+
+    /// The name shown in the status line's mode pill and help's title.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Board => "BOARD",
+            Self::AllTasks => "ALL TASKS",
+            Self::Rail => "RAIL",
+            Self::Search => "SEARCH",
+            Self::Detail => "DETAIL",
+            Self::Editor => "EDIT",
+            Self::Help => "HELP",
+            Self::Confirm => "DELETE",
+            Self::TooSmall => "",
+            Self::MoveTo => "MOVE",
+            Self::QuickAdd => "ADD",
+        }
+    }
+
+    /// The name help uses for the context, as in "Keys · Board".
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Board => "Board",
+            Self::AllTasks => "All tasks",
+            Self::Rail => "Column rail",
+            Self::Search => "Search",
+            Self::Detail => "Details",
+            Self::Editor => "Editor",
+            Self::Help => "Help",
+            Self::Confirm => "Delete",
+            Self::TooSmall => "",
+            Self::MoveTo => "Move to",
+            Self::QuickAdd => "Quick add",
+        }
+    }
 }
 
 /// A set of contexts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Contexts(u16);
+pub struct Contexts(u32);
 
 impl Contexts {
     const fn of(contexts: &[Context]) -> Self {
         let mut bits = 0;
         let mut index = 0;
         while index < contexts.len() {
-            bits |= contexts[index] as u16;
+            bits |= contexts[index] as u32;
             index += 1;
         }
         Self(bits)
     }
 
     pub fn contains(self, context: Context) -> bool {
-        self.0 & context as u16 != 0
+        self.0 & context as u32 != 0
     }
 }
 
 const CARDS: Contexts = Contexts::of(&[Context::Board, Context::AllTasks]);
 const DASHBOARD: Contexts = Contexts::of(&[Context::Board, Context::AllTasks, Context::Rail]);
 const TASK_ACTIONS: Contexts = Contexts::of(&[Context::Board, Context::AllTasks, Context::Detail]);
-const EVERYWHERE: Contexts = Contexts(u16::MAX);
 
 const fn only(context: Context) -> Contexts {
-    Contexts(context as u16)
+    Contexts(context as u32)
 }
+
+const fn except(context: Context) -> Contexts {
+    Contexts(!(context as u32))
+}
+
+const DIGITS: [Key; 9] = [
+    ch('1'),
+    ch('2'),
+    ch('3'),
+    ch('4'),
+    ch('5'),
+    ch('6'),
+    ch('7'),
+    ch('8'),
+    ch('9'),
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Group {
@@ -118,12 +173,21 @@ pub enum CommandId {
     RailNext,
     RailFirst,
     RailLast,
+    JumpToLane,
+    GoPrefix,
+    GoToLane,
     FocusCards,
     ToggleFocus,
     ToggleView,
     OpenDetail,
     NewTask,
+    NewTaskAbove,
+    QuickAdd,
     EditTask,
+    DuplicateTask,
+    MoveTo,
+    MoveTaskUp,
+    MoveTaskDown,
     DeleteTask,
     MoveTaskLeft,
     MoveTaskRight,
@@ -142,6 +206,12 @@ pub enum CommandId {
     CancelEdit,
     ConfirmDelete,
     CancelDelete,
+    MenuUp,
+    MenuDown,
+    MenuPick,
+    CloseMenu,
+    AddQuickTask,
+    CloseQuickAdd,
     HelpScrollUp,
     HelpScrollDown,
     CloseHelp,
@@ -153,14 +223,25 @@ pub enum CommandId {
 /// One key, as written in the table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Key {
+    /// A key pressed first, as the `g` in `g g`.
+    pub prefix: Option<char>,
     pub code: KeyCode,
     pub modifiers: KeyModifiers,
 }
 
 const fn key(code: KeyCode) -> Key {
     Key {
+        prefix: None,
         code,
         modifiers: KeyModifiers::NONE,
+    }
+}
+
+/// A key pressed after `g`.
+const fn after_g(character: char) -> Key {
+    Key {
+        prefix: Some('g'),
+        ..ch(character)
     }
 }
 
@@ -170,6 +251,7 @@ const fn ch(character: char) -> Key {
 
 const fn ctrl(character: char) -> Key {
     Key {
+        prefix: None,
         code: KeyCode::Char(character),
         modifiers: KeyModifiers::CONTROL,
     }
@@ -218,10 +300,14 @@ impl Key {
             KeyCode::Delete => "Del".to_owned(),
             other => format!("{other:?}"),
         };
-        if self.modifiers.contains(KeyModifiers::CONTROL) {
+        let name = if self.modifiers.contains(KeyModifiers::CONTROL) {
             format!("Ctrl+{}", name.to_uppercase())
         } else {
             name
+        };
+        match self.prefix {
+            Some(prefix) => format!("{prefix} {name}"),
+            None => name,
         }
     }
 }
@@ -251,6 +337,11 @@ pub struct Command {
     pub contexts: Contexts,
     pub hint: Option<Hint>,
     pub pair: Option<Pair>,
+    /// How help shows the keys, when listing them would be too long (as
+    /// "1–9") or they aren't fixed (as "g + letter").
+    pub shown_keys: Option<&'static str>,
+    /// Whether help and the command palette list the command.
+    pub listed: bool,
 }
 
 impl Command {
@@ -269,6 +360,24 @@ impl Command {
             contexts,
             hint: None,
             pair: None,
+            shown_keys: None,
+            listed: true,
+        }
+    }
+
+    const fn shown_as(self, keys: &'static str) -> Self {
+        Self {
+            shown_keys: Some(keys),
+            ..self
+        }
+    }
+
+    /// Leaves the command out of help and the palette, for keys that only
+    /// start something that is listed on its own, such as `g`.
+    const fn unlisted(self) -> Self {
+        Self {
+            listed: false,
+            ..self
         }
     }
 
@@ -291,6 +400,9 @@ impl Command {
     /// All of the command's keys for the help overlay, as in "h / ←", or
     /// for a pair, "h/l  ←/→".
     pub fn keys_label(&self) -> String {
+        if let Some(keys) = self.shown_keys {
+            return keys.to_owned();
+        }
         match self.pair {
             Some(pair) => self
                 .keys
@@ -316,6 +428,9 @@ impl Command {
     /// The keys shown in a footer hint: the first key, or the first key
     /// of both commands in a pair.
     pub fn hint_keys(&self) -> String {
+        if let Some(keys) = self.shown_keys {
+            return keys.to_owned();
+        }
         let first = self.keys[0].label();
         match self.pair {
             Some(pair) => format!("{first}/{}", command(pair.with).keys[0].label()),
@@ -433,7 +548,7 @@ pub const COMMANDS: &[Command] = &[
     ),
     Command::new(
         C::FirstCard,
-        &[key(KeyCode::Home)],
+        &[key(KeyCode::Home), after_g('g')],
         "first card",
         G::Navigation,
         CARDS,
@@ -441,7 +556,7 @@ pub const COMMANDS: &[Command] = &[
     .pair(C::LastCard, "first / last card"),
     Command::new(
         C::LastCard,
-        &[key(KeyCode::End)],
+        &[key(KeyCode::End), ch('G')],
         "last card",
         G::Navigation,
         CARDS,
@@ -478,6 +593,28 @@ pub const COMMANDS: &[Command] = &[
         only(Context::Rail),
     ),
     Command::new(
+        C::JumpToLane,
+        &DIGITS,
+        "lane by its number",
+        G::Navigation,
+        Contexts::of(&[
+            Context::Board,
+            Context::AllTasks,
+            Context::Rail,
+            Context::MoveTo,
+        ]),
+    )
+    .shown_as("1–9"),
+    Command::new(C::GoPrefix, &[ch('g')], "go to…", G::Navigation, CARDS).unlisted(),
+    Command::new(
+        C::GoToLane,
+        &[],
+        "lane by its initial",
+        G::Navigation,
+        CARDS,
+    )
+    .shown_as("g + letter"),
+    Command::new(
         C::FocusCards,
         &[key(KeyCode::Enter)],
         "rail: focus cards",
@@ -510,8 +647,38 @@ pub const COMMANDS: &[Command] = &[
         CARDS,
     )
     .hint(6, "open"),
-    Command::new(C::NewTask, &[ch('n')], "new task", G::Tasks, DASHBOARD).hint(5, "new"),
+    Command::new(
+        C::NewTask,
+        &[ch('n')],
+        "new task below",
+        G::Tasks,
+        DASHBOARD,
+    )
+    .hint(5, "new")
+    .pair(C::NewTaskAbove, "new task below / above"),
+    Command::new(
+        C::NewTaskAbove,
+        &[ch('N')],
+        "new task above",
+        G::Tasks,
+        DASHBOARD,
+    ),
+    Command::new(
+        C::QuickAdd,
+        &[ch('a')],
+        "quick add to this lane",
+        G::Tasks,
+        DASHBOARD,
+    ),
     Command::new(C::EditTask, &[ch('e')], "edit task", G::Tasks, TASK_ACTIONS).hint(7, "edit"),
+    Command::new(
+        C::DuplicateTask,
+        &[ch('y')],
+        "duplicate task",
+        G::Tasks,
+        TASK_ACTIONS,
+    ),
+    Command::new(C::MoveTo, &[ch('m')], "move to…", G::Tasks, TASK_ACTIONS),
     Command::new(
         C::DeleteTask,
         &[ch('d')],
@@ -536,6 +703,21 @@ pub const COMMANDS: &[Command] = &[
         G::Tasks,
         TASK_ACTIONS,
     ),
+    Command::new(
+        C::MoveTaskDown,
+        &[ch('J')],
+        "move task down",
+        G::Tasks,
+        TASK_ACTIONS,
+    )
+    .pair(C::MoveTaskUp, "move task down / up"),
+    Command::new(
+        C::MoveTaskUp,
+        &[ch('K')],
+        "move task up",
+        G::Tasks,
+        TASK_ACTIONS,
+    ),
     Command::new(C::Undo, &[ch('u'), ctrl('z')], "undo", G::Tasks, DASHBOARD)
         .pair(C::Redo, "undo / redo"),
     Command::new(C::Redo, &[ch('U'), ctrl('r')], "redo", G::Tasks, DASHBOARD),
@@ -543,7 +725,7 @@ pub const COMMANDS: &[Command] = &[
     Command::new(
         C::ClearSearch,
         &[key(KeyCode::Esc)],
-        "clear search",
+        "back / clear search",
         G::Tasks,
         Contexts::of(&[
             Context::Board,
@@ -587,7 +769,7 @@ pub const COMMANDS: &[Command] = &[
     ),
     Command::new(
         C::CloseDetail,
-        &[key(KeyCode::Esc)],
+        &[key(KeyCode::Esc), ch('q')],
         "close details",
         G::Details,
         only(Context::Detail),
@@ -636,12 +818,60 @@ pub const COMMANDS: &[Command] = &[
     .hint(1, "delete"),
     Command::new(
         C::CancelDelete,
-        &[ch('n'), key(KeyCode::Esc)],
+        &[ch('n'), key(KeyCode::Esc), ch('q')],
         "delete: cancel",
         G::Editing,
         only(Context::Confirm),
     )
     .hint(2, "cancel"),
+    Command::new(
+        C::MenuDown,
+        &[ch('j'), key(KeyCode::Down)],
+        "menu: next",
+        G::Editing,
+        only(Context::MoveTo),
+    )
+    .hint(2, "choose")
+    .pair(C::MenuUp, "menu: next / previous"),
+    Command::new(
+        C::MenuUp,
+        &[ch('k'), key(KeyCode::Up)],
+        "menu: previous",
+        G::Editing,
+        only(Context::MoveTo),
+    ),
+    Command::new(
+        C::MenuPick,
+        &[key(KeyCode::Enter)],
+        "menu: pick",
+        G::Editing,
+        only(Context::MoveTo),
+    )
+    .hint(1, "move"),
+    Command::new(
+        C::CloseMenu,
+        &[key(KeyCode::Esc), ch('q')],
+        "menu: close",
+        G::Editing,
+        only(Context::MoveTo),
+    )
+    .hint(3, "cancel"),
+    Command::new(
+        C::AddQuickTask,
+        &[key(KeyCode::Enter)],
+        "quick add: add",
+        G::Editing,
+        only(Context::QuickAdd),
+    )
+    .hint(1, "add"),
+    Command::new(
+        C::CloseQuickAdd,
+        &[key(KeyCode::Esc), ctrl('c')],
+        "quick add: done",
+        G::Editing,
+        only(Context::QuickAdd),
+    )
+    .hint(2, "done"),
     // General
     Command::new(
         C::HelpScrollUp,
@@ -697,7 +927,7 @@ pub const COMMANDS: &[Command] = &[
         &[ctrl('c')],
         "quit (anywhere)",
         G::General,
-        EVERYWHERE,
+        except(Context::QuickAdd),
     ),
 ];
 
@@ -710,10 +940,21 @@ pub fn command(id: CommandId) -> &'static Command {
 
 /// The command a key runs in a context, if any.
 pub fn lookup(context: Context, event: &KeyEvent) -> Option<CommandId> {
+    lookup_after(context, None, event)
+}
+
+/// The command a key runs in a context after `prefix` was pressed (or
+/// with no prefix), if any.
+pub fn lookup_after(context: Context, prefix: Option<char>, event: &KeyEvent) -> Option<CommandId> {
     COMMANDS
         .iter()
         .filter(|command| command.contexts.contains(context))
-        .find(|command| command.keys.iter().any(|key| key.matches(event)))
+        .find(|command| {
+            command
+                .keys
+                .iter()
+                .any(|key| key.prefix == prefix && key.matches(event))
+        })
         .map(|command| command.id)
 }
 
@@ -770,7 +1011,11 @@ mod tests {
     #[test]
     fn every_command_is_reachable() {
         for command in COMMANDS {
-            assert!(!command.keys.is_empty(), "{:?} has no keys", command.id);
+            assert!(
+                !command.keys.is_empty() || command.shown_keys.is_some(),
+                "{:?} has no keys",
+                command.id
+            );
             assert!(
                 Context::ALL
                     .iter()
@@ -792,11 +1037,28 @@ mod tests {
         assert_eq!(lookup(Context::Editor, &h), None);
         let ctrl_c = event(KeyCode::Char('c'), KeyModifiers::CONTROL);
         for context in Context::ALL {
-            assert_eq!(lookup(context, &ctrl_c), Some(C::ForceQuit));
+            let expected = match context {
+                Context::QuickAdd => C::CloseQuickAdd,
+                _ => C::ForceQuit,
+            };
+            assert_eq!(lookup(context, &ctrl_c), Some(expected));
         }
         // Plain "c" is not Ctrl+C, and Ctrl+H is not h.
         let ctrl_h = event(KeyCode::Char('h'), KeyModifiers::CONTROL);
         assert_eq!(lookup(Context::Board, &ctrl_h), None);
+    }
+
+    #[test]
+    fn chords_only_match_after_their_prefix() {
+        let g = event(KeyCode::Char('g'), KeyModifiers::NONE);
+        assert_eq!(lookup(Context::Board, &g), Some(C::GoPrefix));
+        assert_eq!(
+            lookup_after(Context::Board, Some('g'), &g),
+            Some(C::FirstCard)
+        );
+        let b = event(KeyCode::Char('b'), KeyModifiers::NONE);
+        assert_eq!(lookup_after(Context::Board, Some('g'), &b), None);
+        assert_eq!(command(C::FirstCard).keys_label(), "Home/End  g g/G");
     }
 
     #[test]

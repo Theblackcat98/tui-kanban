@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots.rs
-expression: "harness.screen(width, height)"
+expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
 
@@ -20,5 +20,5 @@ expression: "harness.screen(width, height)"
 
 
 
-
+ Tip  Press ? for the keys on any screen · Esc to dismiss
  BOARD   ● saved   j/k card   h/l column   v view   n/N new

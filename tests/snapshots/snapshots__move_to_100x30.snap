@@ -1,6 +1,6 @@
 ---
 source: tests/snapshots.rs
-expression: "harness.screen(width, height)"
+expression: "harness.screen(100, 30)"
 ---
  Snapshot Board   Board · All tasks
 
@@ -13,16 +13,14 @@ expression: "harness.screen(width, height)"
 
                        ▎ Record a demo           ▎ Command table           ▎ Snapshot tests
                        ▎ Commit the .tape fil…   ▎ Every keybinding def…   ▎ ◷ 1d ago
-                       ▎ ◷ 3d ago                ▎ ◷ 1h ago
-
-                       ▎ Package release
-                       ▎ binaries
-                       ▎ ◷ Aug 20
-
-
-
-
-
+                       ▎ ◷ 3d ╭ Move "Write the README" ─────────────╮
+                              │                                      │
+                       ▎ Packa│ 1 Backlog      current               │
+                       ▎ binar│▌2 In Progress                        │
+                       ▎ ◷ Aug│ 3 Done                               │
+                              │                                      │
+                              │ Enter move   j/k choose   Esc cancel │
+                              ╰──────────────────────────────────────╯
 
 
 
@@ -31,4 +29,6 @@ expression: "harness.screen(width, height)"
 
 
 
- BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n/N new   Enter open   e edit
+
+
+ MOVE   ● saved   Enter move   j/k choose   Esc cancel

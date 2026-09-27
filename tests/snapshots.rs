@@ -489,3 +489,36 @@ fn keys_delete_after_confirmation() {
     assert_eq!(titles, ["Write the README", "Package release binaries"]);
     screen_snapshot!("keys_delete_100x30", harness, 100, 30);
 }
+
+// Navigation (#45)
+
+#[test]
+fn move_to_menu() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char('m'), KeyCode::Char('j')]);
+    screen_snapshot!("move_to_100x30", harness, 100, 30);
+}
+
+#[test]
+fn quick_add_prompt() {
+    let mut harness = Harness::new(typical_board());
+    harness
+        .keys(&[KeyCode::Char('l'), KeyCode::Char('a')])
+        .type_text("Review the diff");
+    screen_snapshot!("quick_add_100x30", harness, 100, 30);
+}
+
+#[test]
+fn first_run_tip() {
+    let mut harness = Harness::new(typical_board());
+    harness.app.model.ui.tip = true;
+    screen_snapshot!("tip_100x30", harness, 100, 30);
+    screen_snapshot!("tip_60x20", harness, 60, 20);
+}
+
+#[test]
+fn help_for_the_detail_drawer() {
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Enter, KeyCode::Char('?')]);
+    screen_snapshot!("help_detail_100x30", harness, 100, 30);
+}

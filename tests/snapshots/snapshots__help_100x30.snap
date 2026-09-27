@@ -3,32 +3,32 @@ source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
  Snapshot Board   Board · All tasks
- ╭ Keyboard shortcuts ────────────────────────────────────────────────────────────────────────────╮
- │ Navigation                                          Details                                    │
- │   h/l  ←/→            previous / next column          PgUp/PgDn        scroll up / down a page │
- │   j/k  ↓/↑            next / previous card            j/k  ↓/↑         scroll down / up a line │
- │   h/l  ←/→            card to the left / right        Esc              close details           │
- │   j/k  ↓/↑            row down / up                                                            │
- │   [/]                 previous / next column group  Editor, search and dialogs                 │
- │   PgUp/PgDn           up / down five cards or rows    Enter            search: apply           │
- │   Home/End            first / last card               Tab / Shift+Tab  editor: switch field    │
- │   j/k  ↓/↑  l/h  →/←  rail: next / previous column    Enter            editor: save            │
- │   Home/End            rail: first / last column       Esc              editor: cancel          │
- │   Enter               rail: focus cards               y                delete: confirm         │
- │   Tab / Shift+Tab     focus rail / cards              n / Esc          delete: cancel          │
- │   v                   Board / All tasks                                                        │
- │                                                     General                                    │
- │ Tasks                                                 j/k  ↓/↑         help: scroll down / up  │
- │   Enter               open details                    Esc / q / ?      help: close             │
- │   n                   new task                        ?                this help               │
- │   e                   edit task                       q                quit                    │
- │   d                   delete task                     Ctrl+C           quit (anywhere)         │
- │   H/L                 move task left / right                                                   │
- │   u/U  Ctrl+Z/Ctrl+R  undo / redo                                                              │
- │   /                   search                                                                   │
- │   Esc                 clear search                                                             │
- │                                                                                                │
- │ Press any key to return                                                                        │
- ╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  Columns              Backlog  3                In Progress  2            Done  2
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ╭ Keys · Board ─────────────────────────────────────────────────────────────────────────────────╮
+ │ Navigation                                       Tasks                                        │
+ │   h/l  ←/→         previous / next column          Enter               open details           │
+ │   j/k  ↓/↑         next / previous card            n/N                 new task below / above │
+ │   PgUp/PgDn        up / down five cards or rows    a                   quick add to this lane │
+ │   Home/End  g g/G  first / last card               e                   edit task              │
+ │   1–9              lane by its number              y                   duplicate task         │
+ │   g + letter       lane by its initial             m                   move to…               │
+ │   Tab / Shift+Tab  focus rail / cards              d                   delete task            │
+ │   v                Board / All tasks               H/L                 move task left / right │
+ │                                                    J/K                 move task down / up    │
+ │                                                    u/U  Ctrl+Z/Ctrl+R  undo / redo            │
+ │                                                    /                   search                 │
+ │                                                    Esc                 back / clear search    │
+ │                                                                                               │
+ │                                                  General                                      │
+ │                                                    ?                   this help              │
+ │                                                    q                   quit                   │
+ │                                                    Ctrl+C              quit (anywhere)        │
+ │                                                                                               │
+ │ j/k scroll   Esc close                                                                        │
+ ╰───────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
 
  HELP   ● saved   j/k scroll   Esc close

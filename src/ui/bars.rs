@@ -107,20 +107,6 @@ fn render_search(frame: &mut Frame<'_>, area: Rect, model: &Model) -> usize {
     width + 1
 }
 
-fn mode_label(context: Context) -> &'static str {
-    match context {
-        Context::Board => "BOARD",
-        Context::AllTasks => "ALL TASKS",
-        Context::Rail => "RAIL",
-        Context::Search => "SEARCH",
-        Context::Detail => "DETAIL",
-        Context::Editor => "EDIT",
-        Context::Help => "HELP",
-        Context::Confirm => "DELETE",
-        Context::TooSmall => "",
-    }
-}
-
 pub(crate) fn render_status(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
     let theme = &model.ui.theme;
     fill(frame, area, Style::default().bg(theme.panel));
@@ -138,7 +124,7 @@ pub(crate) fn render_status(frame: &mut Frame<'_>, area: Rect, model: &Model, cl
         SaveState::Failed(_) => ("✕", theme.danger, "not saved"),
     };
     let mut spans = vec![
-        Span::styled(format!(" {} ", mode_label(context)), pill),
+        Span::styled(format!(" {} ", context.label()), pill),
         Span::raw("  "),
         Span::styled(icon, fg(icon_color)),
         Span::styled(format!(" {status}"), faint(model)),
@@ -166,6 +152,21 @@ pub(crate) fn render_status(frame: &mut Frame<'_>, area: Rect, model: &Model, cl
         None => spans.extend(hint_line(model, context, room).spans),
     }
     put(frame, area.x, area.y, area.width, Line::from(spans));
+}
+
+/// The first-run tip, above the status line, until it is dismissed.
+pub(crate) fn render_tip(frame: &mut Frame<'_>, area: Rect, model: &Model) {
+    let theme = &model.ui.theme;
+    fill(frame, area, Style::default().bg(theme.panel));
+    let line = Line::from(vec![
+        Span::styled(" Tip ", fg(theme.info).add_modifier(Modifier::BOLD)),
+        Span::styled(" Press ", faint(model)),
+        Span::styled("?", fg(theme.text).add_modifier(Modifier::BOLD)),
+        Span::styled(" for the keys on any screen · ", faint(model)),
+        Span::styled("Esc", fg(theme.text).add_modifier(Modifier::BOLD)),
+        Span::styled(" to dismiss", faint(model)),
+    ]);
+    put(frame, area.x, area.y, area.width, line);
 }
 
 /// The hints for a context from the command table, most important first,

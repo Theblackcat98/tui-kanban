@@ -3,21 +3,21 @@ source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
-   ╭ Keyboard shortcuts ────────────────────────────────╮
+   ╭ Keys · Board ──────────────────────────────────────╮
  Ba│ Navigation                                         │
  ▔▔│   h/l  ←/→            previous / next column       │▔▔
    │   j/k  ↓/↑            next / previous card         │
- ▌ │   h/l  ←/→            card to the left / right     │
- ▌ │   j/k  ↓/↑            row down / up                │
- ▌ │   [/]                 previous / next column group │
-   │   PgUp/PgDn           up / down five cards or rows │
- ▎ │   Home/End            first / last card            │
- ▎ │   j/k  ↓/↑  l/h  →/←  rail: next / previous column │
- ▎ │   Home/End            rail: first / last column    │
-   │   Enter               rail: focus cards            │
+ ▌ │   PgUp/PgDn           up / down five cards or rows │
+ ▌ │   Home/End  g g/G     first / last card            │
+ ▌ │   1–9                 lane by its number           │
+   │   g + letter          lane by its initial          │
  ▎ │   Tab / Shift+Tab     focus rail / cards           │
  ▎ │   v                   Board / All tasks            │
-   │                                                    │
+ ▎ │                                                    │
+   │ Tasks                                              │
+ ▎ │   Enter               open details                 │
+ ▎ │   n/N                 new task below / above       │
+   │   a                   quick add to this lane       │
    │                                                    │
    │ ↓ more   j/k scroll   Esc close                    │
    ╰────────────────────────────────────────────────────╯

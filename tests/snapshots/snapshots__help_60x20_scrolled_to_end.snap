@@ -3,18 +3,18 @@ source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
-   ╭ Keyboard shortcuts ────────────────────────────────╮
- Ba│ Editor, search and dialogs                         │
- ▔▔│   Enter               search: apply                │▔▔
-   │   Tab / Shift+Tab     editor: switch field         │
- ▌ │   Enter               editor: save                 │
- ▌ │   Esc                 editor: cancel               │
- ▌ │   y                   delete: confirm              │
-   │   n / Esc             delete: cancel               │
+   ╭ Keys · Board ──────────────────────────────────────╮
+ Ba│   e                   edit task                    │
+ ▔▔│   y                   duplicate task               │▔▔
+   │   m                   move to…                     │
+ ▌ │   d                   delete task                  │
+ ▌ │   H/L                 move task left / right       │
+ ▌ │   J/K                 move task down / up          │
+   │   u/U  Ctrl+Z/Ctrl+R  undo / redo                  │
+ ▎ │   /                   search                       │
+ ▎ │   Esc                 back / clear search          │
  ▎ │                                                    │
- ▎ │ General                                            │
- ▎ │   j/k  ↓/↑            help: scroll down / up       │
-   │   Esc / q / ?         help: close                  │
+   │ General                                            │
  ▎ │   ?                   this help                    │
  ▎ │   q                   quit                         │
    │   Ctrl+C              quit (anywhere)              │

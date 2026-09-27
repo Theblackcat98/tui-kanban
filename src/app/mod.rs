@@ -60,6 +60,9 @@ pub struct Cli {
 pub struct App {
     pub model: Model,
     pub store: JsonStore,
+    /// Created when the first-run tip is dismissed, so it stays dismissed.
+    /// Without one, the tip isn't shown.
+    tip_marker: Option<PathBuf>,
     quit: bool,
 }
 
@@ -71,8 +74,17 @@ impl App {
         Ok(Self {
             model: Model::new(board, theme, animations_enabled),
             store,
+            tip_marker: None,
             quit: false,
         })
+    }
+
+    /// Shows the first-run tip unless `marker` exists, and creates it when
+    /// the tip is dismissed.
+    pub fn with_tip_marker(mut self, marker: PathBuf) -> Self {
+        self.model.ui.tip = !marker.exists();
+        self.tip_marker = Some(marker);
+        self
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, clock: Clock) {
@@ -104,6 +116,16 @@ impl App {
                         queue.push_back(Action::SaveFinished(result));
                     }
                     Effect::Quit => self.quit = true,
+                    Effect::DismissTip => {
+                        // Best effort: if this fails the tip shows again
+                        // next time, which is harmless.
+                        if let Some(marker) = &self.tip_marker {
+                            if let Some(parent) = marker.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let _ = std::fs::write(marker, "");
+                        }
+                    }
                 }
             }
         }
@@ -158,6 +180,9 @@ pub fn run() -> Result<()> {
         theme::detect_light_background,
     )?;
     let mut app = App::new(store, theme, animations)?;
+    if let Some(state) = crate::paths::state_dir() {
+        app = app.with_tip_marker(state.join("tip-dismissed"));
+    }
     let mut terminal = ratatui::try_init().context("could not initialize terminal")?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);
@@ -565,6 +590,7 @@ mod tests {
         let mut app = App {
             model: Model::new(Default::default(), Theme::mocha(), false),
             store,
+            tip_marker: None,
             quit: false,
         };
         app.resize(100, 30);
@@ -750,6 +776,191 @@ mod tests {
         assert_eq!(app.model.board.task_count(), 0);
         press(&mut app, &[KeyCode::Char('u')]);
         assert_eq!(toast_message(&app), "Nothing to undo");
+    }
+
+    fn titles(app: &App, column: usize) -> Vec<&str> {
+        app.model.board.columns[column]
+            .tasks
+            .iter()
+            .map(|task| task.title.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn digits_and_g_jump_between_lanes_and_cards() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "First");
+        add(&mut app, 0, "Middle");
+        let last = add(&mut app, 0, "Last");
+        let done = add(&mut app, 2, "Shipped");
+        press(&mut app, &[KeyCode::Char('3')]);
+        assert_eq!(app.model.ui.active_column, 2);
+        assert_eq!(app.model.selected_task_id(), Some(done));
+        // A lane that doesn't exist does nothing.
+        press(&mut app, &[KeyCode::Char('9')]);
+        assert_eq!(app.model.ui.active_column, 2);
+        // g + a lane's initial, in any case.
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('b')]);
+        assert_eq!(app.model.ui.active_column, 0);
+        press(&mut app, &[KeyCode::Char('G')]);
+        assert_eq!(app.model.selected_task_id(), Some(last));
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('g')]);
+        assert_eq!(app.model.selected_task_id(), Some(first));
+        assert!(app.model.ui.pending.is_none());
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('I')]);
+        assert_eq!(app.model.ui.active_column, 1);
+        press(&mut app, &[KeyCode::Char('g'), KeyCode::Char('x')]);
+        assert_eq!(toast_message(&app), "No lane starts with \"x\"");
+        // Esc cancels a prefix without doing anything else.
+        press(
+            &mut app,
+            &[KeyCode::Char('g'), KeyCode::Esc, KeyCode::Char('j')],
+        );
+        assert!(app.model.ui.pending.is_none());
+    }
+
+    #[test]
+    fn new_tasks_go_below_or_above_the_selection() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "One");
+        add(&mut app, 0, "Two");
+        press(&mut app, &[KeyCode::Char('n')]);
+        type_text(&mut app, "Below one");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char('N')]);
+        type_text(&mut app, "Above below one");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(
+            titles(&app, 0),
+            ["One", "Above below one", "Below one", "Two"]
+        );
+        // In an empty lane, N adds at the top and n at the end.
+        press(&mut app, &[KeyCode::Char('l'), KeyCode::Char('n')]);
+        type_text(&mut app, "Only");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(titles(&app, 1), ["Only"]);
+    }
+
+    #[test]
+    fn shift_j_and_k_reorder_within_the_lane() {
+        let (_directory, mut app) = test_app();
+        let one = add(&mut app, 0, "One");
+        add(&mut app, 0, "Two");
+        add(&mut app, 0, "Three");
+        press(&mut app, &[KeyCode::Char('J'), KeyCode::Char('J')]);
+        assert_eq!(titles(&app, 0), ["Two", "Three", "One"]);
+        assert_eq!(app.model.selected_task_id(), Some(one));
+        // At the end of the lane it stays put.
+        press(&mut app, &[KeyCode::Char('J')]);
+        assert_eq!(titles(&app, 0), ["Two", "Three", "One"]);
+        press(&mut app, &[KeyCode::Char('K')]);
+        assert_eq!(titles(&app, 0), ["Two", "One", "Three"]);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(titles(&app, 0), ["Two", "Three", "One"]);
+    }
+
+    #[test]
+    fn move_to_menu_moves_a_task_to_any_lane() {
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Travel");
+        press(&mut app, &[KeyCode::Char('m')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::MoveTo { selected: 0, .. })
+        ));
+        press(
+            &mut app,
+            &[KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Enter],
+        );
+        assert_eq!(app.model.board.task_location(id), Some((2, 0)));
+        assert!(app.model.ui.screens.is_empty());
+        // A digit picks directly, and q closes without moving.
+        press(&mut app, &[KeyCode::Char('m'), KeyCode::Char('2')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        press(&mut app, &[KeyCode::Char('m'), KeyCode::Char('q')]);
+        assert_eq!(app.model.board.task_location(id), Some((1, 0)));
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn quick_add_stays_open_for_the_next_task() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 1, "Existing");
+        press(&mut app, &[KeyCode::Char('l'), KeyCode::Char('a')]);
+        type_text(&mut app, "First");
+        press(&mut app, &[KeyCode::Enter]);
+        type_text(&mut app, "Second");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(matches!(top_screen(&app), Some(Screen::QuickAdd { .. })));
+        assert_eq!(titles(&app, 1), ["Existing", "First", "Second"]);
+        // Enter on an empty prompt closes it, as do Esc and Ctrl+C.
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('a')]);
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.should_quit());
+    }
+
+    #[test]
+    fn duplicate_copies_below_and_can_be_undone() {
+        let (_directory, mut app) = test_app();
+        let original = add(&mut app, 0, "Template");
+        add(&mut app, 0, "Other");
+        press(&mut app, &[KeyCode::Char('y')]);
+        assert_eq!(titles(&app, 0), ["Template", "Template", "Other"]);
+        let copy = app.model.board.columns[0].tasks[1].id;
+        assert_ne!(copy, original);
+        assert_eq!(app.model.selected_task_id(), Some(copy));
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(titles(&app, 0), ["Template", "Other"]);
+    }
+
+    #[test]
+    fn escape_goes_back_and_q_closes_overlays() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Task");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char('q')]);
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.should_quit());
+        press(&mut app, &[KeyCode::Tab, KeyCode::Esc]);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+        press(&mut app, &[KeyCode::Esc, KeyCode::Esc]);
+        assert!(!app.should_quit());
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(app.should_quit());
+    }
+
+    #[test]
+    fn help_lists_the_keys_for_the_screen_it_opened_from() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Task");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char('?')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Help {
+                context: crate::command::Context::Detail,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn the_tip_stays_dismissed() {
+        let (directory, app) = test_app();
+        let marker = directory.path().join("state").join("tip-dismissed");
+        let mut app = app.with_tip_marker(marker.clone());
+        assert!(app.model.ui.tip);
+        press(&mut app, &[KeyCode::Esc]);
+        assert!(!app.model.ui.tip);
+        assert!(marker.exists());
+        let store = JsonStore::new(directory.path().join("board.json"));
+        let app = App::new(store, Theme::mocha(), false)
+            .unwrap()
+            .with_tip_marker(marker);
+        assert!(!app.model.ui.tip);
     }
 
     #[test]

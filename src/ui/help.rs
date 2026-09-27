@@ -1,9 +1,11 @@
-//! The help overlay, generated from the command table.
+//! The help overlay: the keys for the screen it was opened from,
+//! generated from the command table.
 
+use super::bars::hint_line;
 use super::{AnimationKind, centered_rect, fade_in, faint, fg, muted, overlay_block, progress};
 use crate::app::Model;
 use crate::clock::Clock;
-use crate::command::{COMMANDS, Group};
+use crate::command::{self, Context, Group};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -20,14 +22,15 @@ struct Section {
     rows: Vec<(String, &'static str)>,
 }
 
-fn sections() -> Vec<Section> {
+fn sections(context: Context) -> Vec<Section> {
     Group::ALL
         .iter()
         .map(|group| Section {
             title: group.title(),
-            rows: COMMANDS
-                .iter()
-                .filter(|command| command.group == *group && !command.is_paired_into_another())
+            rows: command::available(context)
+                .filter(|command| {
+                    command.group == *group && command.listed && !command.is_paired_into_another()
+                })
                 .map(|command| (command.keys_label(), command.help_label()))
                 .collect(),
         })
@@ -90,12 +93,23 @@ fn balanced_split(sections: &[Section]) -> usize {
 }
 
 /// The number of lines the help overlay can scroll through at most.
-pub(crate) fn line_count() -> usize {
-    sections().iter().map(section_height).sum::<usize>() - 1
+pub(crate) fn line_count(context: Context) -> usize {
+    sections(context)
+        .iter()
+        .map(section_height)
+        .sum::<usize>()
+        .saturating_sub(1)
 }
 
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, scroll: u16, clock: Clock) {
-    let sections = sections();
+pub(crate) fn render(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    scroll: u16,
+    context: Context,
+    clock: Clock,
+) {
+    let sections = sections(context);
     let available_width = area.width.saturating_sub(2);
     let (left, right) = sections.split_at(balanced_split(&sections));
     let two_columns = available_width >= column_width(left) + column_width(right) + COLUMN_GAP + 4;
@@ -116,7 +130,8 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, scroll: u
     let height = (content_height + 4).min(area.height.saturating_sub(2));
     let modal = centered_rect(area, width, height);
     frame.render_widget(Clear, modal);
-    let block = overlay_block(model, "Keyboard shortcuts", model.ui.theme.border);
+    let title = format!("Keys · {}", context.title());
+    let block = overlay_block(model, &title, model.ui.theme.border);
     let inner = block.inner(modal);
     frame.render_widget(block, modal);
     let inner = Rect::new(
@@ -143,15 +158,14 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, scroll: u
         x = x.saturating_add(width + COLUMN_GAP);
     }
 
-    let hint = if scroll < max_scroll {
-        "↓ more   j/k scroll   Esc close"
-    } else if max_scroll > 0 {
-        "j/k scroll   Esc close"
-    } else {
-        "Press any key to return"
-    };
+    let mut footer = Line::default();
+    if scroll < max_scroll {
+        footer.push_span(Span::styled("↓ more   ", faint(model)));
+    }
+    let room = (inner.width as usize).saturating_sub(footer.width());
+    footer.extend(hint_line(model, Context::Help, room).spans);
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(hint, faint(model)))),
+        Paragraph::new(footer),
         Rect::new(
             inner.x,
             inner.y + inner.height.saturating_sub(1),

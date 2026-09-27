@@ -8,7 +8,8 @@ use super::action::{Action, Effect};
 use super::history::Entry;
 use super::input::TextInput;
 use super::model::{
-    EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Toast, ToastKind, ViewMode,
+    EditorField, EditorState, FocusRegion, Model, Pending, Placement, SaveState, Screen, Toast,
+    ToastKind, ViewMode,
 };
 use crate::animation::AnimationKind;
 use crate::clock::Clock;
@@ -20,8 +21,17 @@ pub fn update(model: &mut Model, action: Action, clock: Clock) -> Vec<Effect> {
     // An error toast stays until the next key press.
     let key_press = matches!(
         action,
-        Action::Command(_) | Action::Edit(_) | Action::DismissHelp
+        Action::Command(_)
+            | Action::Edit(_)
+            | Action::DismissHelp
+            | Action::JumpToLane(_)
+            | Action::GoToLane(_)
+            | Action::CancelPrefix
     );
+    // A prefix waits for exactly one more key.
+    if key_press {
+        model.ui.pending = None;
+    }
     if key_press
         && model
             .session
@@ -53,6 +63,9 @@ impl Updater<'_> {
             Action::Command(id) => self.execute(id),
             Action::Edit(key) => self.edit(&key),
             Action::DismissHelp => self.pop(),
+            Action::JumpToLane(index) => self.jump_to_lane(index),
+            Action::GoToLane(letter) => self.go_to_lane(letter),
+            Action::CancelPrefix => {}
             Action::Resize(width, height) => {
                 self.model.ui.viewport = (width, height);
                 if !self.model.breakpoint().shows_rail() {
@@ -103,6 +116,14 @@ impl Updater<'_> {
             CommandId::RailLast => {
                 self.select_column(self.model.board.columns.len().saturating_sub(1))
             }
+            // Digits and `g` + letter arrive as their own actions.
+            CommandId::JumpToLane | CommandId::GoToLane => {}
+            CommandId::GoPrefix => {
+                self.model.ui.pending = Some(Pending {
+                    prefix: 'g',
+                    since: self.clock.instant,
+                });
+            }
             CommandId::FocusCards => self.model.ui.focus = FocusRegion::Cards,
             CommandId::ToggleFocus => {
                 let rail_shown = self.model.breakpoint().shows_rail();
@@ -129,10 +150,43 @@ impl Updater<'_> {
                     self.animate(AnimationKind::Drawer, 220);
                 }
             }
-            CommandId::NewTask => {
-                self.push(Screen::Editor(EditorState::new()));
+            CommandId::NewTask | CommandId::NewTaskAbove => {
+                let placement = self.placement(id == CommandId::NewTaskAbove);
+                self.push(Screen::Editor(EditorState::new(placement)));
                 self.animate(AnimationKind::Modal, 180);
             }
+            CommandId::QuickAdd => {
+                if !self.model.board.columns.is_empty() {
+                    self.push(Screen::QuickAdd {
+                        column: self.model.ui.active_column,
+                        input: TextInput::new(""),
+                    });
+                    self.animate(AnimationKind::Modal, 120);
+                }
+            }
+            CommandId::AddQuickTask => self.add_quick_task(),
+            CommandId::CloseQuickAdd | CommandId::CloseMenu => self.pop(),
+            CommandId::DuplicateTask => self.duplicate_task(),
+            CommandId::MoveTo => {
+                if let Some(task) = self.target_task()
+                    && let Some((column, _)) = self.model.board.task_location(task)
+                {
+                    self.push(Screen::MoveTo {
+                        task,
+                        selected: column,
+                    });
+                    self.animate(AnimationKind::Modal, 140);
+                }
+            }
+            CommandId::MenuUp => self.move_menu(-1),
+            CommandId::MenuDown => self.move_menu(1),
+            CommandId::MenuPick => {
+                if let Some(&Screen::MoveTo { selected, .. }) = self.model.ui.screens.last() {
+                    self.pick_move_target(selected);
+                }
+            }
+            CommandId::MoveTaskUp => self.reorder_task(-1),
+            CommandId::MoveTaskDown => self.reorder_task(1),
             CommandId::EditTask => {
                 if let Some(task) = self.target_task().and_then(|id| self.model.board.task(id)) {
                     let editor = EditorState::from_task(task);
@@ -146,8 +200,8 @@ impl Updater<'_> {
                     self.animate(AnimationKind::Modal, 160);
                 }
             }
-            CommandId::MoveTaskLeft => self.move_task(-1),
-            CommandId::MoveTaskRight => self.move_task(1),
+            CommandId::MoveTaskLeft => self.move_task_sideways(-1),
+            CommandId::MoveTaskRight => self.move_task_sideways(1),
             CommandId::Undo => self.undo(),
             CommandId::Redo => self.redo(),
             CommandId::Search => {
@@ -156,9 +210,17 @@ impl Updater<'_> {
                 self.model.ui.focus = FocusRegion::Cards;
                 self.animate(AnimationKind::Selection, 120);
             }
+            // Esc goes back one level: it clears a search, leaves the rail,
+            // or dismisses the tip, and never quits.
             CommandId::ClearSearch => {
-                self.model.ui.search = Default::default();
-                self.model.reconcile_selection();
+                if self.model.ui.search.is_active() {
+                    self.model.ui.search = Default::default();
+                    self.model.reconcile_selection();
+                } else if self.model.ui.focus == FocusRegion::Rail {
+                    self.model.ui.focus = FocusRegion::Cards;
+                } else {
+                    self.dismiss_tip();
+                }
             }
             CommandId::ApplySearch => self.model.ui.search.input = None,
             CommandId::ScrollUp => self.scroll_detail(-10),
@@ -187,8 +249,10 @@ impl Updater<'_> {
             CommandId::HelpScrollUp => self.scroll_help(-1),
             CommandId::HelpScrollDown => self.scroll_help(1),
             CommandId::Help => {
-                self.push(Screen::Help { scroll: 0 });
+                let context = self.model.context();
+                self.push(Screen::Help { scroll: 0, context });
                 self.animate(AnimationKind::Modal, 180);
+                self.dismiss_tip();
             }
             CommandId::Quit | CommandId::ForceQuit => self.effects.push(Effect::Quit),
         }
@@ -201,10 +265,18 @@ impl Updater<'_> {
                 self.model.ui.search.query = input.value.clone();
                 self.model.reconcile_selection();
             }
-        } else if let Some(Screen::Editor(editor)) = self.model.ui.screens.last_mut()
-            && editor.active_input().handle_key(key)
-        {
-            editor.error = None;
+        } else {
+            match self.model.ui.screens.last_mut() {
+                Some(Screen::Editor(editor)) => {
+                    if editor.active_input().handle_key(key) {
+                        editor.error = None;
+                    }
+                }
+                Some(Screen::QuickAdd { input, .. }) => {
+                    input.handle_key(key);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -232,9 +304,38 @@ impl Updater<'_> {
     }
 
     fn scroll_help(&mut self, delta: i16) {
-        let max_scroll = ui::help_line_count().saturating_sub(1) as u16;
-        if let Some(Screen::Help { scroll }) = self.model.ui.screens.last_mut() {
+        if let Some(Screen::Help { scroll, context }) = self.model.ui.screens.last_mut() {
+            let max_scroll = ui::help_line_count(*context).saturating_sub(1) as u16;
             *scroll = scroll.saturating_add_signed(delta).min(max_scroll);
+        }
+    }
+
+    fn dismiss_tip(&mut self) {
+        if self.model.ui.tip {
+            self.model.ui.tip = false;
+            self.effects.push(Effect::DismissTip);
+        }
+    }
+
+    /// Where `n` (or `N`, `above`) puts a new task: next to the selected
+    /// card when the cards have focus, else at the end (or start) of the
+    /// active column.
+    fn placement(&self, above: bool) -> Placement {
+        let column = self.model.ui.active_column;
+        let anchor = self
+            .model
+            .selected_task_id()
+            .filter(|_| self.model.ui.focus == FocusRegion::Cards)
+            .filter(|id| {
+                self.model
+                    .board
+                    .task_location(*id)
+                    .is_some_and(|(task_column, _)| task_column == column)
+            });
+        Placement {
+            column,
+            anchor,
+            above,
         }
     }
 
@@ -349,7 +450,11 @@ impl Updater<'_> {
             self.set_editor_error("Title cannot be empty");
             return;
         }
-        let column = self.model.ui.active_column;
+        let placement = editor.placement.unwrap_or(Placement {
+            column: self.model.ui.active_column,
+            anchor: None,
+            above: false,
+        });
         let label = match task_id {
             Some(_) => format!("edit '{title}'"),
             None => format!("add '{title}'"),
@@ -359,7 +464,15 @@ impl Updater<'_> {
                 board.update_task(id, title, description, now).map(|_| id)
             }),
             None => self.change(label, |board, now| {
-                board.add_task(column, title, description, now)
+                let anchor = placement.anchor.and_then(|id| board.task_location(id));
+                let index = match anchor {
+                    Some((column, index)) if column == placement.column => {
+                        index + usize::from(!placement.above)
+                    }
+                    _ if placement.above => 0,
+                    _ => usize::MAX,
+                };
+                board.insert_task(placement.column, index, title, description, now)
             }),
         };
         match result {
@@ -416,7 +529,157 @@ impl Updater<'_> {
         self.animate(AnimationKind::CardMove, 220);
     }
 
-    fn move_task(&mut self, direction: isize) {
+    fn add_quick_task(&mut self) {
+        let Some(Screen::QuickAdd { column, input }) = self.model.ui.screens.last() else {
+            return;
+        };
+        let column = *column;
+        let title = input.value.trim().to_owned();
+        // Enter on an empty prompt means done.
+        if title.is_empty() {
+            self.pop();
+            return;
+        }
+        let label = format!("add '{title}'");
+        match self.change(label, |board, now| board.add_task(column, title, "", now)) {
+            Ok(id) => {
+                if let Some(Screen::QuickAdd { input, .. }) = self.model.ui.screens.last_mut() {
+                    *input = TextInput::new("");
+                }
+                self.model.select_task(id);
+                self.model.reconcile_selection();
+                let message = format!("Added to {}", self.column_name(column));
+                self.toast(message, ToastKind::Success, Duration::from_secs(2));
+                self.animate(AnimationKind::CardMove, 220);
+            }
+            Err(message) => self.toast(message, ToastKind::Error, None),
+        }
+    }
+
+    fn duplicate_task(&mut self) {
+        let Some(id) = self.target_task() else {
+            return;
+        };
+        let label = format!("duplicate '{}'", self.task_title(id));
+        match self.change(label, |board, now| board.duplicate_task(id, now)) {
+            Ok(copy) => {
+                // A copy made from the drawer opens in the drawer.
+                if let Some(Screen::Detail { task, scroll }) = self.model.ui.screens.last_mut() {
+                    *task = copy;
+                    *scroll = 0;
+                }
+                self.model.select_task(copy);
+                self.model.reconcile_selection();
+                self.toast(
+                    "Task duplicated · u to undo",
+                    ToastKind::Info,
+                    Duration::from_secs(3),
+                );
+                self.animate(AnimationKind::CardMove, 220);
+            }
+            Err(message) => self.toast(message, ToastKind::Error, None),
+        }
+    }
+
+    fn move_menu(&mut self, direction: isize) {
+        let columns = self.model.board.columns.len();
+        if let Some(Screen::MoveTo { selected, .. }) = self.model.ui.screens.last_mut() {
+            *selected = selected
+                .saturating_add_signed(direction)
+                .min(columns.saturating_sub(1));
+        }
+    }
+
+    /// Closes the "move to…" menu and moves its task to `column`.
+    fn pick_move_target(&mut self, column: usize) {
+        let Some(&Screen::MoveTo { task, .. }) = self.model.ui.screens.last() else {
+            return;
+        };
+        if column >= self.model.board.columns.len() {
+            return;
+        }
+        self.pop();
+        if self.model.board.task_location(task).map(|(from, _)| from) != Some(column) {
+            self.move_task_to(task, column);
+        }
+    }
+
+    fn jump_to_lane(&mut self, index: usize) {
+        if matches!(self.model.ui.screens.last(), Some(Screen::MoveTo { .. })) {
+            self.pick_move_target(index);
+        } else if index < self.model.board.columns.len() {
+            self.select_column(index);
+        }
+    }
+
+    /// Selects the next lane after the active one whose name starts with
+    /// `letter`, wrapping around.
+    fn go_to_lane(&mut self, letter: char) {
+        let columns = &self.model.board.columns;
+        let active = self.model.ui.active_column;
+        let starts_with = |index: usize| {
+            columns[index]
+                .name
+                .chars()
+                .next()
+                .is_some_and(|first| first.to_lowercase().eq(letter.to_lowercase()))
+        };
+        let found = (1..=columns.len())
+            .map(|step| (active + step) % columns.len())
+            .find(|index| starts_with(*index));
+        match found {
+            Some(index) => self.select_column(index),
+            None => self.toast(
+                format!("No lane starts with \"{letter}\""),
+                ToastKind::Info,
+                Duration::from_secs(2),
+            ),
+        }
+    }
+
+    /// Moves the target task up or down past the next visible task in its
+    /// column.
+    fn reorder_task(&mut self, direction: isize) {
+        let Some(id) = self.target_task() else {
+            return;
+        };
+        let Some((column, index)) = self.model.board.task_location(id) else {
+            return;
+        };
+        let visible = self.model.visible_task_indices(column);
+        let Some(position) = visible.iter().position(|visible| *visible == index) else {
+            return;
+        };
+        let Some(&neighbour) = position
+            .checked_add_signed(direction)
+            .and_then(|next| visible.get(next))
+        else {
+            return;
+        };
+        // Moving down lands after the neighbour; `move_task` counts the
+        // index as if the task were still in place.
+        let target = if direction > 0 {
+            neighbour + 1
+        } else {
+            neighbour
+        };
+        let label = format!(
+            "move '{}' {}",
+            self.task_title(id),
+            if direction > 0 { "down" } else { "up" }
+        );
+        match self.change(label, |board, now| {
+            board.move_task(id, column, Some(target), now)
+        }) {
+            Ok(_) => {
+                self.model.select_task(id);
+                self.animate(AnimationKind::CardMove, 200);
+            }
+            Err(message) => self.toast(message, ToastKind::Error, None),
+        }
+    }
+
+    fn move_task_sideways(&mut self, direction: isize) {
         let Some(id) = self.target_task() else {
             return;
         };
@@ -426,9 +689,13 @@ impl Updater<'_> {
         let Some(target) = column.checked_add_signed(direction) else {
             return;
         };
-        if target >= self.model.board.columns.len() {
-            return;
+        if target < self.model.board.columns.len() {
+            self.move_task_to(id, target);
         }
+    }
+
+    /// Moves a task to the end of another column.
+    fn move_task_to(&mut self, id: Uuid, target: usize) {
         let label = format!(
             "move '{}' → {}",
             self.task_title(id),

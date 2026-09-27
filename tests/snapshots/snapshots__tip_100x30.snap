@@ -6,10 +6,10 @@ expression: "harness.screen(100, 30)"
 
   Columns              Backlog  3                In Progress  2            Done  2
                        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-   Backlog         3
- ▌ In Progress     2   ▎ Write the README        ▎ Calmer card style       ▎ Set up CI
-   Done            2   ▎ Cover install, usage…   ▎ Tiles with an accent…   ▎ fmt, clippy and test…
-                       ▎ ◷ 1d ago                ▎ ◷ 12m ago               ▎ ◷ 5h ago
+ ▌ Backlog         3
+   In Progress     2   ▌ Write the README        ▎ Calmer card style       ▎ Set up CI
+   Done            2   ▌ Cover install, usage…   ▎ Tiles with an accent…   ▎ fmt, clippy and test…
+                       ▌ ◷ 1d ago                ▎ ◷ 12m ago               ▎ ◷ 5h ago
 
                        ▎ Record a demo           ▎ Command table           ▎ Snapshot tests
                        ▎ Commit the .tape fil…   ▎ Every keybinding def…   ▎ ◷ 1d ago
@@ -30,5 +30,5 @@ expression: "harness.screen(100, 30)"
 
 
 
-
- RAIL   ● saved   Tab rail   j/k column   Enter focus   v view   n/N new   / search   ? help
+ Tip  Press ? for the keys on any screen · Esc to dismiss
+ BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n/N new   Enter open   e edit

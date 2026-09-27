@@ -43,9 +43,21 @@ pub enum EditorField {
     Description,
 }
 
+/// Where a new task goes: next to `anchor` (below it, or above it when
+/// `above` is set), or at the end of `column` (the start, when `above`)
+/// if there is no anchor or it has gone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Placement {
+    pub column: usize,
+    pub anchor: Option<Uuid>,
+    pub above: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct EditorState {
     pub task_id: Option<Uuid>,
+    /// Where a new task goes. Unused when editing.
+    pub placement: Option<Placement>,
     pub title: TextInput,
     pub description: TextInput,
     pub field: EditorField,
@@ -53,9 +65,10 @@ pub struct EditorState {
 }
 
 impl EditorState {
-    pub fn new() -> Self {
+    pub fn new(placement: Placement) -> Self {
         Self {
             task_id: None,
+            placement: Some(placement),
             title: TextInput::new(String::new()),
             description: TextInput::new(String::new()),
             field: EditorField::Title,
@@ -66,6 +79,7 @@ impl EditorState {
     pub fn from_task(task: &Task) -> Self {
         Self {
             task_id: Some(task.id),
+            placement: None,
             title: TextInput::new(task.title.clone()),
             description: TextInput::new(task.description.clone()),
             field: EditorField::Title,
@@ -81,20 +95,41 @@ impl EditorState {
     }
 }
 
-impl Default for EditorState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// A screen or overlay above the board. The top of the stack gets input
 /// first, and Esc pops it, returning to whatever is underneath.
 #[derive(Clone, Debug)]
 pub enum Screen {
-    Detail { task: Uuid, scroll: u16 },
+    Detail {
+        task: Uuid,
+        scroll: u16,
+    },
     Editor(EditorState),
-    ConfirmDelete { task: Uuid },
-    Help { scroll: u16 },
+    ConfirmDelete {
+        task: Uuid,
+    },
+    /// Help for `context`, the context it was opened from.
+    Help {
+        scroll: u16,
+        context: Context,
+    },
+    /// The "move to…" menu: the task and the highlighted column.
+    MoveTo {
+        task: Uuid,
+        selected: usize,
+    },
+    /// The one-line prompt that adds tasks to the end of `column`.
+    QuickAdd {
+        column: usize,
+        input: TextInput,
+    },
+}
+
+/// A prefix key waiting for the key that completes it, as the `g` in
+/// `g g`.
+#[derive(Clone, Copy, Debug)]
+pub struct Pending {
+    pub prefix: char,
+    pub since: Instant,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -189,6 +224,10 @@ pub struct Ui {
     pub viewport: (u16, u16),
     pub theme: Theme,
     pub animations: AnimationEngine,
+    /// A prefix key waiting for its second key.
+    pub pending: Option<Pending>,
+    /// Whether the first-run tip bar shows.
+    pub tip: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -222,6 +261,8 @@ impl Model {
                 animations: AnimationEngine::new(AnimationSettings {
                     enabled: animations_enabled,
                 }),
+                pending: None,
+                tip: false,
             },
             session: Session::default(),
         };
@@ -246,6 +287,8 @@ impl Model {
         }
         match self.ui.screens.last() {
             Some(Screen::Help { .. }) => Context::Help,
+            Some(Screen::MoveTo { .. }) => Context::MoveTo,
+            Some(Screen::QuickAdd { .. }) => Context::QuickAdd,
             Some(Screen::ConfirmDelete { .. }) => Context::Confirm,
             Some(Screen::Editor(_)) => Context::Editor,
             Some(Screen::Detail { .. }) => Context::Detail,
@@ -263,6 +306,7 @@ impl Model {
     pub fn command_enabled(&self, id: CommandId) -> bool {
         match id {
             CommandId::ClearSearch => self.ui.search.is_active(),
+            CommandId::JumpToLane | CommandId::GoToLane => self.board.columns.len() > 1,
             CommandId::ToggleFocus => self.breakpoint().shows_rail(),
             CommandId::Undo => self.session.history.can_undo(),
             CommandId::Redo => self.session.history.can_redo(),
@@ -270,7 +314,11 @@ impl Model {
             | CommandId::EditTask
             | CommandId::DeleteTask
             | CommandId::MoveTaskLeft
-            | CommandId::MoveTaskRight => {
+            | CommandId::MoveTaskRight
+            | CommandId::MoveTaskUp
+            | CommandId::MoveTaskDown
+            | CommandId::MoveTo
+            | CommandId::DuplicateTask => {
                 self.selected_task_id().is_some()
                     || matches!(self.ui.screens.last(), Some(Screen::Detail { .. }))
             }

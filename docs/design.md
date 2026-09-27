@@ -150,16 +150,49 @@ hints are in the status line.
 
 ### Overlays
 
-Help, the editor and the delete dialog float centred on `panel` with a
-rounded `border` (the delete dialog's border is `danger`). Inputs in
-the editor are `surface` fields with a label above; the active one has
-an accent bar, and empty ones show a placeholder.
+Help, the editor, the delete dialog, the "move to…" menu and the
+quick-add prompt float centred on `panel` with a rounded `border` (the
+delete dialog's border is `danger`, the quick-add prompt's is the lane's
+colour). Inputs are `surface` fields; the active one has an accent bar,
+and empty ones show a placeholder. Every overlay's last row lists its
+own keys, generated from the command table.
+
+Help lists the keys for the screen it was opened from (`Keys · Board`,
+`Keys · Details`, …), grouped as in the command table.
+
+### Tip bar
+
+Until it is dismissed, a one-row bar above the status line says `Press ?
+for the keys on any screen · Esc to dismiss`. Opening help or pressing
+Esc on the board dismisses it for good (a marker file in the state
+directory, `~/.local/state/tui-kanban`).
 
 ### Empty states
 
 Empty states say what to do next: `No tasks yet · n to add one · ? for
 all keys` on an empty board, and `No matches for "x" · Esc to clear`
 while a filter matches nothing.
+
+## Navigation
+
+The same keys mean the same thing on every screen:
+
+| Key | Meaning |
+|---|---|
+| `h j k l` / arrows | Move spatially: lanes and cards, the All tasks grid, menus |
+| `Enter` | Open or confirm |
+| `Esc` | Go back one level (close an overlay, clear a search, leave the rail); never quits |
+| `q` | Quit from the board; close from inside an overlay |
+| `?` | Help for the current screen |
+
+Moving faster: `1`–`9` jump to a lane, `g g` / `G` to the first or last
+card, `g` + a letter to the next lane with that initial.
+
+Changing tasks: `H`/`L` move a task to the previous or next lane, `m`
+opens a "move to…" menu, `J`/`K` reorder within a lane, `n` / `N` add a
+task below / above the selected one, `a` quick-adds to the end of the
+lane from a one-line prompt that stays open for the next task, `y`
+duplicates, and `u` / `U` undo and redo.
 
 ## Motion
 

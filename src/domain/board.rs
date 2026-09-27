@@ -154,9 +154,23 @@ impl Board {
             .and_then(|(column_index, task_index)| self.columns[column_index].tasks.get(task_index))
     }
 
+    /// Adds a task to the end of a column.
     pub fn add_task(
         &mut self,
         column_index: usize,
+        title: impl Into<String>,
+        description: impl Into<String>,
+        now: i64,
+    ) -> Result<Uuid, BoardError> {
+        self.insert_task(column_index, usize::MAX, title, description, now)
+    }
+
+    /// Adds a task at `index` in a column, or at the end if `index` is
+    /// past it.
+    pub fn insert_task(
+        &mut self,
+        column_index: usize,
+        index: usize,
         title: impl Into<String>,
         description: impl Into<String>,
         now: i64,
@@ -171,8 +185,18 @@ impl Board {
             .ok_or(BoardError::InvalidColumn(column_index))?;
         let task = Task::new(title.trim().to_owned(), description.into(), now);
         let id = task.id;
-        column.tasks.push(task);
+        column.tasks.insert(index.min(column.tasks.len()), task);
         Ok(id)
+    }
+
+    /// Adds a copy of a task, with a new id and times, right below it.
+    pub fn duplicate_task(&mut self, id: Uuid, now: i64) -> Result<Uuid, BoardError> {
+        let (column, index) = self.task_location(id).ok_or(BoardError::TaskNotFound(id))?;
+        let original = &self.columns[column].tasks[index];
+        let copy = Task::new(original.title.clone(), original.description.clone(), now);
+        let copy_id = copy.id;
+        self.columns[column].tasks.insert(index + 1, copy);
+        Ok(copy_id)
     }
 
     pub fn update_task(
@@ -290,6 +314,23 @@ mod tests {
 
         board.remove_task(id).unwrap();
         assert!(board.task(id).is_none());
+    }
+
+    #[test]
+    fn tasks_can_be_inserted_and_duplicated_in_place() {
+        let mut board = Board::default();
+        let last = board.add_task(0, "Last", "", 0).unwrap();
+        let first = board.insert_task(0, 0, "First", "", 0).unwrap();
+        let copy = board.duplicate_task(first, 5).unwrap();
+        let ids: Vec<Uuid> = board.columns[0].tasks.iter().map(|task| task.id).collect();
+        assert_eq!(ids, [first, copy, last]);
+        let copied = board.task(copy).unwrap();
+        assert_eq!(copied.title, "First");
+        assert_eq!(copied.created_at, 5);
+        assert_eq!(
+            board.duplicate_task(Uuid::nil(), 0),
+            Err(BoardError::TaskNotFound(Uuid::nil()))
+        );
     }
 
     #[test]

@@ -10,6 +10,8 @@ mod editor;
 mod geometry;
 mod help;
 mod lanes;
+mod menu;
+mod prompt;
 mod rail;
 mod text;
 
@@ -43,6 +45,9 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
         ViewMode::Board => lanes::render(frame, &page, model, clock),
         ViewMode::AllTasks => all_tasks::render(frame, page.main, model, clock),
     }
+    if let Some(tip) = page.tip {
+        bars::render_tip(frame, tip, model);
+    }
     bars::render_status(frame, page.status, model, clock);
 
     // Screens are drawn bottom first, so a dialog opened from the detail
@@ -55,8 +60,16 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
                 }
             }
             Screen::Editor(editor) => editor::render(frame, area, model, editor, clock),
-            Screen::Help { scroll } => help::render(frame, area, model, *scroll, clock),
+            Screen::Help { scroll, context } => {
+                help::render(frame, area, model, *scroll, *context, clock)
+            }
             Screen::ConfirmDelete { task } => confirm::render(frame, area, model, *task, clock),
+            Screen::MoveTo { task, selected } => {
+                menu::render(frame, area, model, *task, *selected, clock)
+            }
+            Screen::QuickAdd { column, input } => {
+                prompt::render(frame, area, model, *column, input, clock)
+            }
         }
     }
 }
@@ -91,8 +104,8 @@ fn render_too_small(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     );
 }
 
-pub(crate) fn help_line_count() -> usize {
-    help::line_count()
+pub(crate) fn help_line_count(context: crate::command::Context) -> usize {
+    help::line_count(context)
 }
 
 /// A column's accent colour.
