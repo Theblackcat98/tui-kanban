@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ TUI KANBAN   Snapshot Board   [BOARD]                                                       saved
+ COLUMNS           │╭──────────────────────────────────────────────────────────────────────────────╮
+                    │ Backlog  3                                                                   │
+ ▌ Backlog 3        │╭ Keyboard shortcuts ────────────────────────────────────╮───────────────────╮│
+   In Prog…2        ││Navigation                                              │                   ││
+   Done    2        ││v                toggle Board / All tasks               │                   ││
+                    ││Tab              focus rail / cards                     │                   ││
+                    ││h / l or ← / →   select column                          │                   ││
+                    ││j / k or ↑ / ↓   select card                            │───────────────────╯│
+                    ││H / L            move selected card                     │───────────────────╮│
+                    ││PageUp / PageDn  move by five cards                     │                   ││
+                    ││                                                        │                   ││
+                    ││Tasks                                                   │                   ││
+                    ││n                new task                               │                   ││
+                    ││e                edit task                              │───────────────────╯│
+                    ││d                delete task                            │───────────────────╮│
+                    ││Enter            open details                           │                   ││
+                    ││/                search                                 │                   ││
+                    ││                                                        │                   ││
+                    ││Details                                                 │                   ││
+                    ││PageUp / PageDn  scroll description                     │───────────────────╯│
+                    ││H / L            move task from drawer                  │                    │
+                    ││                                                        │                    │
+                    ││General                                                 │                    │
+                    ││?                this help                              │                    │
+                    │╰────────────────────────────────────────────────────────╯                    │
+                    │                                                                              │
+                    │                                                                              │
+                    ╰──────────────────────────────────────────────────────────────────────────────╯
+ any key close

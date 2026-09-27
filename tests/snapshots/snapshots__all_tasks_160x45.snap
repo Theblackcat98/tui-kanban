@@ -1,0 +1,49 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(width, height)"
+---
+ TUI KANBAN   Snapshot Board   [ALL TASKS]                                                                                                               saved
+ COLUMNS           │Backlog  3 tasks
+                    ╭────────────────────────────────────────────╮ ╭────────────────────────────────────────────╮ ╭────────────────────────────────────────────╮
+ ▌ Backlog 3        │Write the README                            │ │Record a demo                               │ │Package release binaries                    │
+   In Prog…2        │                                            │ │                                            │ │                                            │
+   Done    2        │Cover install, usage, keys and the file     │ │Commit the .tape file too.                  │ │No description                              │
+                    │ Backlog  •  updated 1d                     │ │ Backlog  •  updated 3d                     │ │ Backlog  •  updated 9d                     │
+                    ╰────────────────────────────────────────────╯ ╰────────────────────────────────────────────╯ ╰────────────────────────────────────────────╯
+
+                    In Progress  2 tasks
+                    ╭────────────────────────────────────────────╮ ╭────────────────────────────────────────────╮
+                    │Calmer card style                           │ │Command table                               │
+                    │                                            │ │                                            │
+                    │Tiles with an accent bar.                   │ │Every keybinding defined once.              │
+                    │ In Progress  •  updated 12m                │ │ In Progress  •  updated 1h                 │
+                    ╰────────────────────────────────────────────╯ ╰────────────────────────────────────────────╯
+
+                    Done  2 tasks
+                    ╭────────────────────────────────────────────╮ ╭────────────────────────────────────────────╮
+                    │Set up CI                                   │ │Snapshot tests                              │
+                    │                                            │ │                                            │
+                    │fmt, clippy and tests.                      │ │No description                              │
+                    │ Done  •  updated 5h                        │ │ Done  •  updated 1d                        │
+                    ╰────────────────────────────────────────────╯ ╰────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ tab rail  •  v view  •  j/k cards  •  h/l column  •  n new  •  ? help

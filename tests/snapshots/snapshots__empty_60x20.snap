@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ TUI KANBAN   Project Board                          saved
+╭──────────────────────────────────────────────────────────╮
+│ Backlog  0                                               │
+│No cards yet                                              │
+│                                                          │
+│Press n to create one                                     │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •

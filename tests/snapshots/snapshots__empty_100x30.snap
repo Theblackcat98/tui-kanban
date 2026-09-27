@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ TUI KANBAN   Project Board   [BOARD]                                                        saved
+ COLUMNS           │╭──────────────────────────────────────────────────────────────────────────────╮
+                    │ Backlog  0                                                                   │
+ ▌ Backlog 0        │No cards yet                                                                  │
+   In Prog…0        │                                                                              │
+   Done    0        │Press n to create one                                                         │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    ╰──────────────────────────────────────────────────────────────────────────────╯
+ tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •  ? help

@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ TUI KANBAN   Snapshot Board   [BOARD]                               / ca
+ COLUMNS           │╭──────────────────────────────────────────────────────────────────────────────╮
+                    │ Backlog  0 / 3                                                               │
+ ▌ Backlog 0/3      │No matching cards                                                             │
+   In Prog…1/2      │                                                                              │
+   Done    0/2      │Press esc to clear search                                                     │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    ╰──────────────────────────────────────────────────────────────────────────────╯
+ type to search  •  enter search  •  esc clear

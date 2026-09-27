@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ TUI KANBAN   Snapshot Board   [BOARD]                                                       saved
+ COLUMNS           │╭──────────────────────────────────────────────────────────────────────────────╮
+                    │ A column with a very long name that will not fit  2                          │
+ ▌ A colum…2        │╭────────────────────────────────────────────────────────────────────────────╮│
+   Done    1        ││A very long task title that keeps going well past the width of any card on  ││
+                    ││screen                                                                      ││
+                    ││- an indented list item                                                     ││
+                    ││ A column with a very long name that will not fit  •  updated 2m            ││
+                    │╰────────────────────────────────────────────────────────────────────────────╯│
+                    │╭────────────────────────────────────────────────────────────────────────────╮│
+                    ││日本語のタスク名と絵文字 🦀🚀 が混ざったタイトル                            ││
+                    ││                                                                            ││
+                    ││全角文字の説明文です。幅の計算を確かめます。                                ││
+                    ││ A column with a very long name that will not fit  •  updated 3h            ││
+                    │╰────────────────────────────────────────────────────────────────────────────╯│
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    │                                                                              │
+                    ╰──────────────────────────────────────────────────────────────────────────────╯
+ tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •  ? help

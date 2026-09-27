@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(60, 20)"
+---
+ TUI KANBAN   Snapshot Board                         saved
+╭──────────────────────────────────────────────────────────╮
+│ Backlog  3                                               │
+│╭────────────────────────────────────────────────────────╮│
+││Write the README                                        ││
+││                                                        ││
+││Cover install, usage, keys and the file format.         ││
+││ Backlog  •  updated 1d                                 ││
+│╰────────────────────────────────────────────────────────╯│
+│╭────────────────────────────────────────────────────────╮│
+││Record a demo                                           ││
+││                                                        ││
+││Commit the .tape file too.                              ││
+││ Backlog  •  updated 3d                                 ││
+│╰────────────────────────────────────────────────────────╯│
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ tab rail  •  v view  •  hjkl move  •  n new  •  e edit  •
