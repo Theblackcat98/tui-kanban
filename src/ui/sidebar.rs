@@ -1,3 +1,4 @@
+use super::muted_style;
 use super::{cards, truncate_text};
 use crate::app::{App, FocusRegion};
 use ratatui::Frame;
@@ -18,9 +19,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
     let heading = Paragraph::new(Line::from(Span::styled(
         " COLUMNS",
-        Style::default()
-            .fg(app.theme.muted)
-            .add_modifier(Modifier::BOLD),
+        muted_style(app).add_modifier(Modifier::BOLD),
     )))
     .style(Style::default().bg(app.theme.surface));
     frame.render_widget(heading, Rect::new(area.x, area.y, area.width, 1));
@@ -72,7 +71,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 name,
                 Style::default().fg(text_color).bg(background).add_modifier(
                     if selected && focused {
-                        Modifier::BOLD
+                        Modifier::BOLD | app.theme.selected_modifier
                     } else {
                         Modifier::empty()
                     },
@@ -96,8 +95,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     if app.board.columns.is_empty() {
         frame.render_widget(
-            Paragraph::new(" No columns")
-                .style(Style::default().fg(app.theme.muted).bg(app.theme.surface)),
+            Paragraph::new(" No columns").style(muted_style(app).bg(app.theme.surface)),
             Rect::new(area.x, area.y.saturating_add(2), area.width, 1),
         );
     }

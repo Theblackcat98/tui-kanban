@@ -1,3 +1,4 @@
+use super::muted_style;
 use super::{cards, text_style, truncate_text};
 use crate::app::{App, ViewMode};
 use crate::clock::Clock;
@@ -118,7 +119,7 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
         };
         frame.render_widget(
             Paragraph::new(Text::from(message))
-                .style(Style::default().fg(app.theme.muted).bg(app.theme.surface))
+                .style(muted_style(app).bg(app.theme.surface))
                 .wrap(Wrap { trim: true }),
             list_area,
         );
@@ -243,10 +244,7 @@ fn render_all_section(
                     .fg(cards::column_accent(app, section.column))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!(" {count_text} tasks"),
-                Style::default().fg(app.theme.muted),
-            ),
+            Span::styled(format!(" {count_text} tasks"), muted_style(app)),
         ]);
         frame.render_widget(
             Paragraph::new(heading)
@@ -266,11 +264,8 @@ fn render_all_section(
                 "No matching tasks"
             };
             frame.render_widget(
-                Paragraph::new(format!("  {message}")).style(
-                    Style::default()
-                        .fg(app.theme.muted)
-                        .bg(app.theme.background),
-                ),
+                Paragraph::new(format!("  {message}"))
+                    .style(muted_style(app).bg(app.theme.background)),
                 Rect::new(area.x, y, area.width, 1),
             );
         }

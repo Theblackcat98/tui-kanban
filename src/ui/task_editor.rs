@@ -1,3 +1,4 @@
+use super::muted_style;
 use super::{centered_rect, field_label, render_clear, surface_style, truncate_text};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{App, EditorField, EditorState};
@@ -132,9 +133,7 @@ fn render_input(
         &input.value
     };
     let value_style = if input.value.is_empty() && !active {
-        Style::default()
-            .fg(app.theme.muted)
-            .bg(app.theme.surface_alt)
+        muted_style(app).bg(app.theme.surface_alt)
     } else {
         Style::default()
             .fg(app.theme.text)

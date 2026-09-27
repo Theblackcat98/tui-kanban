@@ -1,3 +1,4 @@
+use super::muted_style;
 use super::{centered_rect, render_clear, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::App;
@@ -80,10 +81,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock)
         Line::from("  Esc              close or cancel"),
         Line::from("  q / Ctrl+C       quit"),
         Line::from(""),
-        Line::from(Span::styled(
-            "Press any key to return",
-            Style::default().fg(app.theme.muted),
-        )),
+        Line::from(Span::styled("Press any key to return", muted_style(app))),
     ]);
     frame.render_widget(
         Paragraph::new(content)
@@ -140,10 +138,7 @@ pub(crate) fn render_confirm(
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from(Span::styled(
-                " y confirm  •  n cancel",
-                Style::default().fg(app.theme.muted),
-            )),
+            Line::from(Span::styled(" y confirm  •  n cancel", muted_style(app))),
         ])
         .style(Style::default().fg(app.theme.text).bg(app.theme.surface))
         .wrap(Wrap { trim: true }),

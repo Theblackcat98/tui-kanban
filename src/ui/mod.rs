@@ -114,10 +114,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
         Mode::Help => "any key close",
         Mode::ConfirmDelete(_) => "y confirm  •  n cancel",
     };
-    let mut spans = vec![Span::styled(
-        format!(" {hints} "),
-        Style::default().fg(app.theme.muted),
-    )];
+    let mut spans = vec![Span::styled(format!(" {hints} "), muted_style(app))];
     if let Some(toast) = &app.toast {
         let color = match toast.kind {
             ToastKind::Info => app.theme.accent_alt,
@@ -183,6 +180,12 @@ pub(crate) fn text_style(app: &App) -> Style {
     Style::default().fg(app.theme.text).bg(app.theme.background)
 }
 
+pub(crate) fn muted_style(app: &App) -> Style {
+    Style::default()
+        .fg(app.theme.muted)
+        .add_modifier(app.theme.muted_modifier)
+}
+
 pub(crate) fn surface_style(app: &App) -> Style {
     Style::default().fg(app.theme.text).bg(app.theme.surface)
 }
@@ -208,9 +211,9 @@ pub(crate) fn field_label(app: &App, _label: &str, active: bool) -> Style {
     if active {
         Style::default()
             .fg(app.theme.accent)
-            .add_modifier(Modifier::BOLD)
+            .add_modifier(Modifier::BOLD | app.theme.active_modifier)
     } else {
-        Style::default().fg(app.theme.muted)
+        muted_style(app)
     }
 }
 

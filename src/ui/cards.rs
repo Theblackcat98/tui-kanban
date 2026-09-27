@@ -1,3 +1,4 @@
+use super::muted_style;
 use super::{blend_color, truncate_text};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{App, FocusRegion};
@@ -45,10 +46,19 @@ pub(crate) fn render_card(
     } else {
         app.theme.border
     };
+    let selected_modifier = if selected_and_focused {
+        app.theme.selected_modifier
+    } else {
+        Modifier::empty()
+    };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border))
-        .style(Style::default().bg(background));
+        .style(
+            Style::default()
+                .bg(background)
+                .add_modifier(selected_modifier),
+        );
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width == 0 || inner.height < 3 {
@@ -69,7 +79,7 @@ pub(crate) fn render_card(
         } else {
             Modifier::empty()
         });
-    let detail_style = Style::default().fg(app.theme.muted).bg(background);
+    let detail_style = muted_style(app).bg(background);
     let metadata_style = Style::default().fg(accent).bg(background);
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(

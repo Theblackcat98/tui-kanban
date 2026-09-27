@@ -1,4 +1,5 @@
 use super::cards;
+use super::muted_style;
 use super::{render_clear, short_id, surface_style};
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::App;
@@ -56,7 +57,7 @@ pub(crate) fn render(
     let Some(task) = app.board.task(task_id) else {
         frame.render_widget(
             Paragraph::new("This task no longer exists.")
-                .style(Style::default().fg(app.theme.muted).bg(app.theme.surface)),
+                .style(muted_style(app).bg(app.theme.surface)),
             inner,
         );
         return;
@@ -127,7 +128,7 @@ pub(crate) fn render(
                 " created {}",
                 cards::relative_time(task.created_at, clock.wall_millis)
             ),
-            Style::default().fg(app.theme.muted),
+            muted_style(app),
         )),
         Line::from(Span::styled(
             format!(
@@ -135,7 +136,7 @@ pub(crate) fn render(
                 cards::relative_time(task.updated_at, clock.wall_millis),
                 short_id(task.id)
             ),
-            Style::default().fg(app.theme.muted),
+            muted_style(app),
         )),
     ];
     frame.render_widget(
@@ -147,7 +148,7 @@ pub(crate) fn render(
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             " e edit  •  H/L move  •  d delete  •  esc close",
-            Style::default().fg(app.theme.muted),
+            muted_style(app),
         )))
         .style(surface_style(app))
         .wrap(Wrap { trim: true }),
