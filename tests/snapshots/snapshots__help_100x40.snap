@@ -13,6 +13,7 @@ expression: "harness.screen(100, 40)"
                        │   g + letter          lane by its initial          │
                        │   Tab / Shift+Tab     focus rail / cards           │Snapshot tests
                        │   v                   Board / All tasks            │◷ 1d ago
+                       │   b                   switch board                 │
                        │                                                    │
                        │ Tasks                                              │
                        │   Enter               open details                 │
@@ -37,7 +38,6 @@ expression: "harness.screen(100, 40)"
                        │ General                                            │
                        │   ?                   this help                    │
                        │   : / Ctrl+K          command palette              │
-                       │   Space               show the keys you can press  │
                        │                                                    │
                        │ ↓ more   j/k scroll   Esc close                    │
                        ╰────────────────────────────────────────────────────╯

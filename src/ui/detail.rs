@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use super::geometry;
 use super::rich::Tone;
-use super::text::{relative_time, short_date, truncate_text};
+use super::text::{date, relative_time, truncate_text};
 use super::{AnimationKind, faint, fg, muted, progress, short_id};
 use crate::app::Model;
 use crate::clock::Clock;
@@ -93,8 +93,8 @@ fn draw(buffer: &mut Buffer, model: &Model, task_id: Uuid, scroll: u16, item: us
         format!("{column} · #{}", short_id(task.id)),
         format!(
             "updated {} · created {}",
-            relative_time(task.updated_at, clock.wall_millis),
-            short_date(task.created_at, clock.wall_millis),
+            relative_time(task.updated_at, clock.wall_millis, &model.ui.date_format),
+            date(task.created_at, clock.wall_millis, &model.ui.date_format),
         ),
     ];
     for (row, text) in meta.iter().enumerate().take(layout.meta.height as usize) {

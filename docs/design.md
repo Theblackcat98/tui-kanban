@@ -156,8 +156,9 @@ Backlog  3
   its Markdown (`- [ ] tag` reads `☐ tag`), cut with `…`. Left out when
   empty.
 - Metadata: `◷ 5m ago` in `text_faint`; dates older than a week read
-  `Sep 3`. A description with a checklist adds `✓ 2/5`, in `success`
-  once every item is ticked.
+  `Sep 3`, or as the config file's `date_format` says. A description
+  with a checklist adds `✓ 2/5`, in `success` once every item is
+  ticked.
 - Height fits the content: two to four rows.
 - **Selected** (and the cards have focus): the tile turns `selection`
   and the bar becomes a bolder `▌`.
@@ -270,6 +271,8 @@ The same keys mean the same thing on every screen:
 | `Space` | Which-key: every key for the current screen |
 | `/` | Search; Ctrl+N / Ctrl+P jump between matches |
 
+`b` switches boards (see [Boards](#boards)).
+
 Moving faster: `1`–`9` jump to a lane, `g g` / `G` to the first or last
 card, `g` + a letter to the next lane with that initial.
 
@@ -278,6 +281,46 @@ opens a "move to…" menu, `J`/`K` reorder within a lane, `n` / `N` add a
 task below / above the selected one, `a` quick-adds to the end of the
 lane from a one-line prompt that stays open for the next task, `y`
 duplicates, and `u` / `U` undo and redo.
+
+## Boards
+
+Without `--board`, tui-kanban looks for `.tui-kanban.json` in the
+current directory and each one above it, the way git finds `.git`,
+stopping at the git root (or, outside a repository, at the home
+directory). So running it anywhere in a project opens that project's
+board. When there is none, a **Welcome** dialog (with an `accent`
+border) asks: `c` creates a board here, named after the directory, and
+`p` opens the personal board in the data directory
+(`~/.local/share/tui-kanban/boards/personal.json`). Nothing is written
+until one is chosen, and `q` quits.
+
+`--board` takes a path, or a name: a recent board with that name (in
+the file) or file name, or else a personal board of that name in the
+data directory, created on its first change.
+
+`b` opens the **board switcher**, a menu of the board open now (`●`),
+the recently opened boards that still exist, and the personal board,
+each with its task count and where it is (`~` for home). Enter saves
+this board and opens the other one, with nothing selected and nothing
+to undo; if this board can't be saved, it stays open and says so.
+Recent boards are kept in the state directory.
+
+## The config file
+
+`~/.config/tui-kanban/config.toml` (`$XDG_CONFIG_HOME` is respected;
+`%APPDATA%` on Windows) sets the theme, animations, the mouse, the
+columns of new boards, the date format (`"auto"`, or a pattern with
+`%Y %y %m %d %e %b %B`) and keys. Command-line options win over it.
+`tui-kanban config` prints where it is, and `tui-kanban config
+--print-default` prints a commented copy with every default, including
+every command's keys, generated from the command table.
+
+Keys are rebound by command name, as in `new_task = "+"` or
+`search = ["/", "ctrl+f"]`. The file is checked when it is read: an
+unknown setting or command, a key that can't be read, or two commands
+sharing a key where both apply is an error that names the problem, and
+tui-kanban doesn't start. Digits, `g` + letter, `g` and Space are fixed.
+Help, hints, which-key and the palette all show the keys in use.
 
 ## Mouse
 
@@ -303,8 +346,8 @@ drawn with (`src/ui/hit.rs`), so a click always lands on what is shown.
 
 While an overlay other than the drawer is open, only the status line
 responds. Capturing the mouse stops the terminal selecting text (most
-terminals still do with Shift held); `--no-mouse` leaves the mouse to the
-terminal.
+terminals still do with Shift held); `--no-mouse`, or `mouse = false` in
+the config file, leaves the mouse to the terminal.
 
 ## Saving
 

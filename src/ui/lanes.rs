@@ -17,6 +17,7 @@ use super::text::{self, truncate_text};
 use super::{blend_color, card, faint, fg, muted, put};
 use crate::app::{FocusRegion, Model};
 use crate::clock::Clock;
+use crate::command::{CommandId, key_label};
 use crate::domain::Wip;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -375,17 +376,21 @@ fn render_empty(
     focused: bool,
 ) {
     let filtering = !model.ui.search.query.is_empty();
-    let mut lines = vec![if model.lane_hidden(column) {
+    let hidden = model.lane_hidden(column);
+    let key = |id: CommandId, text: &str| key_label(id).map(|key| format!("{key} {text}"));
+    let first = if hidden {
         "Collapsed"
     } else if filtering {
         "No matches"
     } else {
         "No tasks yet"
-    }];
-    if model.lane_hidden(column) {
-        lines.push("z to expand");
+    };
+    let mut lines = vec![first.to_owned()];
+    if hidden {
+        lines.extend(key(CommandId::ToggleCollapse, "to expand"));
     } else if focused && !filtering {
-        lines.extend(["n to add one", "? for all keys"]);
+        lines.extend(key(CommandId::NewTask, "to add one"));
+        lines.extend(key(CommandId::Help, "for all keys"));
     }
     let area = parts.cards;
     for (row, text) in lines.into_iter().enumerate() {

@@ -19,6 +19,7 @@ use crate::command::CommandId;
 use crate::domain::{Board, BoardError};
 use crate::ui;
 
+mod boards;
 mod columns;
 mod mouse;
 
@@ -102,6 +103,14 @@ impl Updater<'_> {
             Action::Reloaded(board) => self.reload(board),
             Action::ReloadFailed(message) => self.toast(
                 format!("Could not load the changed board: {message}"),
+                ToastKind::Error,
+                None,
+            ),
+            Action::ShowBoards(entries) => self.show_boards(entries),
+            Action::SwitchReady(path) => self.switch_ready(path),
+            Action::BoardOpened(board) => self.board_opened(board),
+            Action::OpenBoardFailed(message) => self.toast(
+                format!("Could not open the board: {message}"),
                 ToastKind::Error,
                 None,
             ),
@@ -356,6 +365,10 @@ impl Updater<'_> {
             CommandId::PickColor => self.pick_color(),
             CommandId::ToggleCollapse => self.toggle_collapse(),
             CommandId::MoveAnyway => self.confirm_wip_move(),
+            CommandId::SwitchBoard => self.effects.push(Effect::ListBoards),
+            CommandId::OpenBoard => self.open_selected_board(),
+            CommandId::CreateHere => self.create_here(),
+            CommandId::OpenPersonal => self.open_personal(),
             CommandId::CancelMove => self.pop(),
             CommandId::Undo => self.undo(),
             CommandId::Redo => self.redo(),
@@ -623,7 +636,7 @@ impl Updater<'_> {
                 let label = format!("edit '{title}'");
                 match self.change(label, |board, now| board.update_task(id, title, text, now)) {
                     Ok(()) => self.toast(
-                        "Description saved · u to undo",
+                        crate::command::with_undo_hint("Description saved"),
                         ToastKind::Success,
                         Duration::from_secs(3),
                     ),
@@ -951,7 +964,7 @@ impl Updater<'_> {
         self.model.ui.selected = neighbour;
         self.model.reconcile_selection();
         self.toast(
-            "Task deleted · u to undo",
+            crate::command::with_undo_hint("Task deleted"),
             ToastKind::Info,
             Duration::from_secs(5),
         );
@@ -1003,7 +1016,7 @@ impl Updater<'_> {
                 self.model.select_task(copy);
                 self.model.reconcile_selection();
                 self.toast(
-                    "Task duplicated · u to undo",
+                    crate::command::with_undo_hint("Task duplicated"),
                     ToastKind::Info,
                     Duration::from_secs(3),
                 );
@@ -1024,6 +1037,11 @@ impl Updater<'_> {
             }
             Some(Screen::Colors { selected, .. }) => {
                 *selected = selected.saturating_add_signed(direction).min(colors - 1);
+            }
+            Some(Screen::Boards { entries, selected }) => {
+                *selected = selected
+                    .saturating_add_signed(direction)
+                    .min(entries.len().saturating_sub(1));
             }
             _ => {}
         }

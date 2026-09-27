@@ -251,14 +251,20 @@ pub(crate) fn status_hints(model: &Model, area: Rect) -> Vec<(Rect, CommandId)> 
 pub(crate) fn render_tip(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     let theme = &model.ui.theme;
     fill(frame, area, Style::default().bg(theme.panel));
+    let key = |id| {
+        Span::styled(
+            command::key_label(id).unwrap_or_default(),
+            fg(theme.text).add_modifier(Modifier::BOLD),
+        )
+    };
     let line = Line::from(vec![
         Span::styled(" Tip ", fg(theme.info).add_modifier(Modifier::BOLD)),
         Span::styled(" Press ", faint(model)),
-        Span::styled("?", fg(theme.text).add_modifier(Modifier::BOLD)),
+        key(CommandId::Help),
         Span::styled(" for keys, ", faint(model)),
-        Span::styled(":", fg(theme.text).add_modifier(Modifier::BOLD)),
+        key(CommandId::OpenPalette),
         Span::styled(" for commands · ", faint(model)),
-        Span::styled("Esc", fg(theme.text).add_modifier(Modifier::BOLD)),
+        key(CommandId::ClearSearch),
         Span::styled(" to dismiss", faint(model)),
     ]);
     put(frame, area.x, area.y, area.width, line);

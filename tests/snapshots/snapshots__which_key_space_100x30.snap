@@ -16,7 +16,6 @@ expression: "harness.screen(100, 30)"
                        ▎ ◷ 3d ago                ▎ ◷ 1h ago
 
                        ▎ Package release
-                       ▎ binaries
 ── Space ───────────────────────────────────────────────────────────────────────────── Esc cancel ──
   h/l         previous / next column         y       duplicate task
   j/k         next / previous card           m       move to…
@@ -26,9 +25,10 @@ expression: "harness.screen(100, 30)"
   g + letter  lane by its initial            J/K     move task down / up
   Tab         focus rail / cards             z       collapse / expand lane
   v           Board / All tasks              /       search
-  Enter       open details                   ?       this help
-  n/N         new task below / above         :       command palette
-  a           quick add to this lane         q       quit
-  e           edit task                      Ctrl+C  quit (anywhere)
+  b           switch board                   ?       this help
+  Enter       open details                   :       command palette
+  n/N         new task below / above         q       quit
+  a           quick add to this lane         Ctrl+C  quit (anywhere)
+  e           edit task
 
  BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n/N new   Enter open   e edit

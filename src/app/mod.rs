@@ -24,8 +24,8 @@ pub use editor::{EditorField, EditorState, Placement};
 pub use history::History;
 pub use input::TextInput;
 pub use model::{
-    FocusRegion, Model, PromptKind, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind,
-    Ui, ViewMode, VisibleTask,
+    BoardEntry, FocusRegion, Model, PromptKind, SaveState, Screen, Scroll, Search, Session, Toast,
+    ToastKind, Ui, ViewMode, VisibleTask,
 };
 pub use mouse::{DOUBLE_CLICK, Drag, DropTarget, Hit, Marker, Mouse};
 pub use palette::{
@@ -48,7 +48,12 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::boards::{self, Named, Recent};
 use crate::clock::Clock;
+use crate::command;
+use crate::config::{self, Config, DEFAULT_COLUMNS, DateFormat};
+use crate::domain::Board;
+use crate::paths;
 use crate::storage::JsonStore;
 use crate::theme::{self, Theme, reduce_motion};
 use crate::ui;
@@ -58,10 +63,18 @@ use persist::Persistence;
 const IDLE_REFRESH: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Parser)]
-#[command(name = "tui-kanban", about = "A beautiful terminal Kanban board")]
+#[command(
+    name = "tui-kanban",
+    about = "A beautiful terminal Kanban board",
+    version
+)]
 pub struct Cli {
-    #[arg(long, default_value = ".tui-kanban.json")]
-    pub board: PathBuf,
+    /// The board to open: a path to a board file, or a name, which opens
+    /// the recent board with that name or a personal board of that name
+    /// in ~/.local/share/tui-kanban/boards. Without it, the nearest
+    /// .tui-kanban.json in this directory or above, up to the git root.
+    #[arg(long, value_name = "PATH OR NAME")]
+    pub board: Option<String>,
     /// The colour theme: auto (Latte on light terminals, Mocha on dark
     /// ones), latte, frappe, macchiato, mocha, ansi, the name of a theme in
     /// ~/.config/tui-kanban/themes, or a path to a .toml theme file.
@@ -73,6 +86,58 @@ pub struct Cli {
     /// Leave the mouse to the terminal, so text can be selected as usual.
     #[arg(long)]
     pub no_mouse: bool,
+    #[command(subcommand)]
+    pub command: Option<Subcommand>,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum Subcommand {
+    /// Where the config file is, or a commented one with every default.
+    Config {
+        /// Print a config file with every setting at its default, to
+        /// start from: tui-kanban config --print-default > <path>
+        #[arg(long)]
+        print_default: bool,
+    },
+}
+
+/// How the app looks and behaves, from the config file and the command
+/// line.
+#[derive(Clone, Debug)]
+pub struct Settings {
+    pub theme: Theme,
+    pub animations: bool,
+    pub date_format: DateFormat,
+    /// The columns of a new board.
+    pub columns: Vec<String>,
+    /// Whether a new board is named after where it is (its directory, or
+    /// its file), rather than "Project Board".
+    pub name_new_boards: bool,
+}
+
+impl Settings {
+    pub fn new(theme: Theme, animations: bool) -> Self {
+        Self {
+            theme,
+            animations,
+            date_format: DateFormat::default(),
+            columns: DEFAULT_COLUMNS.map(str::to_owned).to_vec(),
+            name_new_boards: false,
+        }
+    }
+
+    /// The board to start with where there is no file at `path` yet.
+    pub fn new_board(&self, path: &std::path::Path) -> Board {
+        let mut board = if self.columns == DEFAULT_COLUMNS {
+            Board::default()
+        } else {
+            Board::with_columns("", &self.columns)
+        };
+        if self.name_new_boards || board.name.is_empty() {
+            board.name = boards::default_name(path);
+        }
+        board
+    }
 }
 
 /// The runtime: the model plus where it is saved. It turns events into
@@ -88,21 +153,70 @@ pub struct App {
     quit: bool,
     /// Whether the user chose to quit without saving.
     discarded: bool,
+    settings: Settings,
+    /// The recently opened boards, for the switcher.
+    recent: Option<Recent>,
+    /// The personal board, which the switcher always offers.
+    personal: Option<PathBuf>,
+    /// Whether to watch boards for changes by other programs.
+    watching: bool,
 }
 
 impl App {
     pub fn new(store: JsonStore, theme: Theme, animations_enabled: bool) -> Result<Self> {
+        Self::with_settings(store, Settings::new(theme, animations_enabled))
+    }
+
+    pub fn with_settings(store: JsonStore, settings: Settings) -> Result<Self> {
         let path = store.path().to_owned();
-        let (persistence, board) = Persistence::open(store)
+        let new_board = settings.new_board(&path);
+        let (persistence, board) = Persistence::open(store, new_board)
             .with_context(|| format!("could not load {}", path.display()))?;
+        let mut model = Model::new(board, settings.theme.clone(), settings.animations);
+        model.ui.date_format = settings.date_format.clone();
         Ok(Self {
-            model: Model::new(board, theme, animations_enabled),
+            model,
             persistence,
             tip_marker: None,
             external_edit: None,
             quit: false,
             discarded: false,
+            settings,
+            recent: None,
+            personal: None,
+            watching: false,
         })
+    }
+
+    /// Remembers opened boards in `recent`, and offers them and the
+    /// personal board (at `personal`) in the board switcher.
+    pub fn with_boards(mut self, recent: Option<Recent>, personal: Option<PathBuf>) -> Self {
+        self.recent = recent;
+        self.personal = personal;
+        self
+    }
+
+    /// Asks where to put the board, when none was found where tui-kanban
+    /// started: here, or the personal board.
+    pub fn ask_for_board(mut self) -> Self {
+        let directory = self
+            .store()
+            .path()
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map_or_else(|| ".".to_owned(), tidy_path);
+        self.model.ui.screens.push(Screen::NoBoard {
+            directory,
+            personal: self.personal.clone(),
+        });
+        self
+    }
+
+    /// Adds the open board to the recent boards.
+    pub fn remember_board(&self) {
+        if let Some(recent) = &self.recent {
+            recent.record(self.store().path());
+        }
     }
 
     pub fn store(&self) -> &JsonStore {
@@ -112,6 +226,7 @@ impl App {
     /// Watches the board file, loading changes other programs make.
     pub fn watch_board(mut self) -> Self {
         self.persistence.watch();
+        self.watching = true;
         self
     }
 
@@ -190,6 +305,13 @@ impl App {
                     Effect::EditExternally { text, target } => {
                         self.external_edit = Some((text, target));
                     }
+                    Effect::ListBoards => queue.push_back(Action::ShowBoards(self.board_entries())),
+                    Effect::SwitchBoard(path) => {
+                        queue.extend(self.persistence.flush(&self.model, clock.instant));
+                        queue.push_back(Action::SwitchReady(path));
+                    }
+                    Effect::LoadBoard(path) => queue.push_back(self.load_board(path)),
+                    Effect::RememberBoard => self.remember_board(),
                     Effect::DismissTip => {
                         // Best effort: if this fails the tip shows again
                         // next time, which is harmless.
@@ -203,6 +325,69 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Opens the board at `path` in place of this one. The caller has
+    /// saved this one first.
+    fn load_board(&mut self, path: PathBuf) -> Action {
+        let new_board = self.settings.new_board(&path);
+        match Persistence::open(JsonStore::new(&path), new_board) {
+            Ok((mut persistence, board)) => {
+                if self.watching {
+                    persistence.watch();
+                }
+                self.persistence = persistence;
+                self.remember_board();
+                Action::BoardOpened(board)
+            }
+            Err(error) => Action::OpenBoardFailed(error.to_string()),
+        }
+    }
+
+    /// The boards the switcher offers: this one, the recent ones that
+    /// still exist, and the personal board.
+    pub fn board_entries(&self) -> Vec<BoardEntry> {
+        let current = boards::absolute(self.store().path());
+        let mut paths = vec![current.clone()];
+        let recent = self.recent.as_ref().map(Recent::load).unwrap_or_default();
+        for path in recent {
+            if !paths.contains(&path) && path.is_file() {
+                paths.push(path);
+            }
+        }
+        if let Some(personal) = &self.personal
+            && !paths.contains(&boards::absolute(personal))
+        {
+            paths.push(personal.clone());
+        }
+        paths
+            .into_iter()
+            .map(|path| {
+                let is_current = path == current;
+                let (name, tasks) = if is_current {
+                    (
+                        self.model.board.name.clone(),
+                        Some(self.model.board.task_count()),
+                    )
+                } else {
+                    match boards::summary(&path) {
+                        Some(summary) => (summary.name, Some(summary.tasks)),
+                        None => (boards::default_name(&path), None),
+                    }
+                };
+                let count = match tasks {
+                    Some(1) => "1 task".to_owned(),
+                    Some(count) => format!("{count} tasks"),
+                    None => "new".to_owned(),
+                };
+                BoardEntry {
+                    detail: format!("{count} · {}", tidy_path(&path)),
+                    name,
+                    current: is_current,
+                    path,
+                }
+            })
+            .collect()
     }
 
     /// Text the runtime should open in `$EDITOR`, if any.
@@ -266,20 +451,91 @@ impl App {
     }
 }
 
+/// `path` with the home directory written as `~`.
+fn tidy_path(path: &std::path::Path) -> String {
+    match crate::paths::home_dir().and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
+        Some(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
-    let store = JsonStore::new(cli.board);
-    let animations = !cli.no_animation && !reduce_motion(env::var_os("REDUCE_MOTION").as_deref());
+    let config_path = paths::config_file();
+    if let Some(Subcommand::Config { print_default }) = cli.command {
+        if print_default {
+            print!("{}", config::default_file());
+        } else {
+            match &config_path {
+                Some(path) if path.exists() => println!("{}", path.display()),
+                Some(path) => println!(
+                    "{} (not created yet; tui-kanban config --print-default prints one)",
+                    path.display()
+                ),
+                None => println!("there is no config directory (set HOME or XDG_CONFIG_HOME)"),
+            }
+        }
+        return Ok(());
+    }
+    let config = match &config_path {
+        Some(path) => Config::load(path)?,
+        None => Config::default(),
+    };
+    command::install(config.command_table()?);
+
+    let animations = !cli.no_animation
+        && config.animations
+        && !reduce_motion(env::var_os("REDUCE_MOTION").as_deref());
     let theme = theme::resolve(
-        cli.theme.as_deref(),
+        cli.theme.as_deref().or(config.theme.as_deref()),
         &theme::Environment::from_env(),
         theme::detect_light_background,
     )?;
-    let mut app = App::new(store, theme, animations)?.watch_board();
-    if let Some(state) = crate::paths::state_dir() {
+    let settings = Settings {
+        date_format: config.date_format.clone(),
+        columns: config.columns.clone(),
+        name_new_boards: true,
+        ..Settings::new(theme, animations)
+    };
+    let state = paths::state_dir();
+    let recent = state
+        .as_ref()
+        .map(|state| Recent::new(state.join("recent-boards")));
+    let data = paths::data_dir();
+    let personal = data
+        .as_ref()
+        .map(|data| boards::named(data, boards::PERSONAL));
+
+    let (path, found) = match cli.board.as_deref().map(Named::parse) {
+        Some(Named::Path(path)) => (path, true),
+        Some(Named::Name(name)) => {
+            let recent_boards = recent.as_ref().map(Recent::load).unwrap_or_default();
+            let path = boards::resolve_name(&name, &recent_boards, data.as_deref()).with_context(
+                || format!("there is no data directory for a board called {name}; give a path"),
+            )?;
+            (path, true)
+        }
+        None => {
+            let here = env::current_dir().context("could not read the current directory")?;
+            match boards::find_upward(&here, paths::home_dir().as_deref()) {
+                Some(path) => (path, true),
+                None => (here.join(boards::FILE_NAME), false),
+            }
+        }
+    };
+    let mut app = App::with_settings(JsonStore::new(path), settings)?
+        .watch_board()
+        .with_boards(recent, personal);
+    if found {
+        app.remember_board();
+    } else {
+        app = app.ask_for_board();
+    }
+    if let Some(state) = state {
         app = app.with_tip_marker(state.join("tip-dismissed"));
     }
-    let mouse = !cli.no_mouse;
+    let mouse = !cli.no_mouse && config.mouse;
     let mut terminal = init_terminal(mouse)?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);
@@ -2030,6 +2286,155 @@ mod tests {
         assert!(matches!(top_screen(&app), Some(Screen::ConfirmWip { .. })));
         press(&mut app, &[KeyCode::Char('y')]);
         assert_eq!(app.model.board.task_location(moving), Some((1, 0)));
+    }
+
+    /// An app on `board.json` in a temporary directory, with recent boards
+    /// and a personal board there too.
+    fn app_with_boards() -> (TempDir, App) {
+        let directory = tempfile::tempdir().unwrap();
+        let store = JsonStore::new(directory.path().join("board.json"));
+        let recent = Recent::new(directory.path().join("state").join("recent-boards"));
+        let personal = boards::named(&directory.path().join("data"), boards::PERSONAL);
+        let mut app = App::new(store, Theme::mocha(), false)
+            .unwrap()
+            .with_boards(Some(recent), Some(personal));
+        app.resize(100, 30);
+        (directory, app)
+    }
+
+    #[test]
+    fn the_switcher_opens_another_board_after_saving_this_one() {
+        let (directory, mut app) = app_with_boards();
+        let other = directory.path().join("other.json");
+        let mut board = Board {
+            name: "Other".to_owned(),
+            ..Board::default()
+        };
+        board.add_task(0, "Theirs", "", 0).unwrap();
+        JsonStore::new(&other).save(&board).unwrap();
+        Recent::new(directory.path().join("state").join("recent-boards")).record(&other);
+
+        add(&mut app, 0, "Mine");
+        press(&mut app, &[KeyCode::Char('L'), KeyCode::Char('b')]);
+        let Some(Screen::Boards { entries, selected }) = top_screen(&app) else {
+            panic!("expected the switcher");
+        };
+        let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(names, ["Project Board", "Other", "Personal"]);
+        assert_eq!(*selected, 0);
+        assert!(entries[0].current);
+        assert!(entries[1].detail.starts_with("1 task · "));
+        assert!(entries[2].detail.starts_with("new · "));
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Enter]);
+        assert_eq!(app.model.board.name, "Other");
+        assert_eq!(app.store().path(), other);
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.model.session.history.can_undo());
+        assert_eq!(toast_message(&app), "Opened Other");
+        // The board left behind was saved first.
+        let mine = JsonStore::new(directory.path().join("board.json"))
+            .load()
+            .unwrap()
+            .unwrap();
+        assert_eq!(mine.columns[1].tasks[0].title, "Mine");
+        // Opening a board makes it the most recent.
+        let recent = Recent::new(directory.path().join("state").join("recent-boards")).load();
+        assert_eq!(recent[0], boards::absolute(&other));
+        // Changes are saved to the new board.
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('y')]);
+        app.flush(clock());
+        assert_eq!(
+            JsonStore::new(&other).load().unwrap().unwrap().task_count(),
+            0
+        );
+    }
+
+    #[test]
+    fn the_switcher_stays_when_this_board_cannot_be_saved() {
+        let (directory, mut app) = app_with_boards();
+        std::fs::create_dir(directory.path().join("board.json")).unwrap();
+        add(&mut app, 0, "Unsaved");
+        press(
+            &mut app,
+            &[KeyCode::Char('L'), KeyCode::Char('b'), KeyCode::Char('j')],
+        );
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.name, "Project Board");
+        assert!(
+            toast_message(&app).starts_with("Can't switch boards"),
+            "{}",
+            toast_message(&app)
+        );
+    }
+
+    #[test]
+    fn with_no_board_found_it_asks_where_to_make_one() {
+        let (directory, app) = app_with_boards();
+        let mut app = app.ask_for_board();
+        assert!(matches!(top_screen(&app), Some(Screen::NoBoard { .. })));
+        // Nothing is written until the user decides.
+        app.flush(clock());
+        assert!(!directory.path().join("board.json").exists());
+        press(&mut app, &[KeyCode::Char('c')]);
+        assert!(app.model.ui.screens.is_empty());
+        app.flush(clock());
+        assert!(directory.path().join("board.json").exists());
+
+        // Or the personal board, which is new, so it starts empty.
+        let (directory, app) = app_with_boards();
+        let mut app = app.ask_for_board();
+        press(&mut app, &[KeyCode::Char('p')]);
+        let personal = boards::named(&directory.path().join("data"), boards::PERSONAL);
+        assert_eq!(app.store().path(), personal);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('a')]);
+        type_text(&mut app, "First");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Esc]);
+        app.flush(clock());
+        assert_eq!(
+            JsonStore::new(&personal)
+                .load()
+                .unwrap()
+                .unwrap()
+                .task_count(),
+            1
+        );
+        assert!(!directory.path().join("board.json").exists());
+
+        // q quits without creating anything.
+        let (directory, app) = app_with_boards();
+        let mut app = app.ask_for_board();
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(app.should_quit());
+        assert!(!directory.path().join("board.json").exists());
+    }
+
+    #[test]
+    fn new_boards_follow_the_settings() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = directory.path().join("website");
+        std::fs::create_dir(&project).unwrap();
+        let settings = Settings {
+            columns: vec!["Ideas".to_owned(), "Doing".to_owned()],
+            name_new_boards: true,
+            date_format: DateFormat::Pattern("%Y-%m-%d".to_owned()),
+            ..Settings::new(Theme::mocha(), false)
+        };
+        let app =
+            App::with_settings(JsonStore::new(project.join(boards::FILE_NAME)), settings).unwrap();
+        assert_eq!(app.model.board.name, "website");
+        let names: Vec<&str> = app
+            .model
+            .board
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect();
+        assert_eq!(names, ["Ideas", "Doing"]);
+        assert_eq!(
+            app.model.ui.date_format,
+            DateFormat::Pattern("%Y-%m-%d".to_owned())
+        );
     }
 
     #[test]

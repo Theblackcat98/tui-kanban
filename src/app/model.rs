@@ -5,6 +5,7 @@
 //! The model is only changed by [`super::update`] and only read by
 //! [`crate::ui::render`].
 
+use std::path::PathBuf;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -15,6 +16,7 @@ use super::mouse::Mouse;
 use super::palette::Palette;
 use crate::animation::{AnimationEngine, AnimationSettings};
 use crate::command::{CommandId, Context};
+use crate::config::DateFormat;
 use crate::domain::{Board, Filter, Task};
 use crate::layout::{self, Breakpoint};
 use crate::theme::Theme;
@@ -97,6 +99,17 @@ pub enum Screen {
         column: usize,
         selected: usize,
     },
+    /// The board switcher: recent boards and the personal board.
+    Boards {
+        entries: Vec<BoardEntry>,
+        selected: usize,
+    },
+    /// No board was found: create one in `directory`, or open the
+    /// personal board at `personal`, if there is a data directory.
+    NoBoard {
+        directory: String,
+        personal: Option<PathBuf>,
+    },
     /// Moving a task into a column that is at its work-in-progress limit.
     ConfirmWip {
         task: Uuid,
@@ -105,6 +118,17 @@ pub enum Screen {
         /// end.
         index: Option<usize>,
     },
+}
+
+/// A board in the board switcher.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoardEntry {
+    pub path: PathBuf,
+    pub name: String,
+    /// Its task count and where it is, as in "12 tasks · ~/src/app".
+    pub detail: String,
+    /// Whether it is the board open now.
+    pub current: bool,
 }
 
 /// What a [`Screen::Prompt`] asks for.
@@ -250,6 +274,8 @@ pub struct Ui {
     /// The terminal size in cells.
     pub viewport: (u16, u16),
     pub theme: Theme,
+    /// How dates older than a week are shown.
+    pub date_format: DateFormat,
     pub animations: AnimationEngine,
     /// A prefix key waiting for its second key.
     pub pending: Option<Pending>,
@@ -291,6 +317,7 @@ impl Model {
                 scroll: Scroll::default(),
                 viewport: (0, 0),
                 theme,
+                date_format: DateFormat::default(),
                 animations: AnimationEngine::new(AnimationSettings {
                     enabled: animations_enabled,
                 }),
@@ -330,6 +357,8 @@ impl Model {
             Some(Screen::DeleteColumn { .. }) => Context::DeleteColumn,
             Some(Screen::Colors { .. }) => Context::Colors,
             Some(Screen::ConfirmWip { .. }) => Context::ConfirmWip,
+            Some(Screen::Boards { .. }) => Context::Boards,
+            Some(Screen::NoBoard { .. }) => Context::NoBoard,
             Some(Screen::Palette(_)) => Context::Palette,
             Some(Screen::ConfirmDelete { .. }) => Context::Confirm,
             Some(Screen::Editor(_)) => Context::Editor,
@@ -363,6 +392,13 @@ impl Model {
                 )
             }
             CommandId::ToggleFocus => self.breakpoint().shows_rail(),
+            CommandId::OpenPersonal => matches!(
+                self.ui.screens.last(),
+                Some(Screen::NoBoard {
+                    personal: Some(_),
+                    ..
+                })
+            ),
             CommandId::DeleteColumn | CommandId::MoveColumnUp | CommandId::MoveColumnDown => {
                 self.board.columns.len() > 1
             }

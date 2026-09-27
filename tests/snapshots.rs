@@ -12,7 +12,9 @@ use ratatui::crossterm::event::{
 };
 use std::time::Duration;
 use tempfile::TempDir;
-use tui_kanban::app::{Action, App, FocusRegion, SaveState, Toast, ToastKind, ViewMode};
+use tui_kanban::app::{
+    Action, App, BoardEntry, FocusRegion, SaveState, Screen, Toast, ToastKind, ViewMode,
+};
 use tui_kanban::clock::Clock;
 use tui_kanban::domain::{Board, Column, SCHEMA_VERSION, Task};
 use tui_kanban::storage::JsonStore;
@@ -734,4 +736,39 @@ fn dragging_shows_where_the_card_goes() {
     mouse(&mut harness, MouseEventKind::Up(MouseButton::Left), 80, 15);
     let last = harness.app.model.board.columns[1].tasks.last().unwrap();
     assert_eq!(last.title, "Package release binaries");
+}
+
+// Boards (#51)
+
+#[test]
+fn board_switcher_and_welcome() {
+    let mut harness = Harness::new(typical_board());
+    let entry = |name: &str, detail: &str, current: bool| BoardEntry {
+        path: format!("/boards/{name}.json").into(),
+        name: name.to_owned(),
+        detail: detail.to_owned(),
+        current,
+    };
+    harness.app.dispatch(
+        Action::ShowBoards(vec![
+            entry("Snapshot Board", "7 tasks · ~/src/tui-kanban", true),
+            entry("Website", "12 tasks · ~/src/website", false),
+            entry(
+                "Personal",
+                "new · ~/.local/share/tui-kanban/boards/personal.json",
+                false,
+            ),
+        ]),
+        clock(),
+    );
+    harness.keys(&[KeyCode::Char('j')]);
+    screen_snapshot!("board_switcher_100x30", harness, 100, 30);
+    screen_snapshot!("board_switcher_60x20", harness, 60, 20);
+
+    let mut harness = Harness::new(Board::default());
+    harness.app.model.ui.screens.push(Screen::NoBoard {
+        directory: "~/src/website".to_owned(),
+        personal: Some("/data/boards/personal.json".into()),
+    });
+    screen_snapshot!("no_board_100x30", harness, 100, 30);
 }

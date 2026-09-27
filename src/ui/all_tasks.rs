@@ -11,6 +11,7 @@ use super::text::truncate_text;
 use super::{card, faint, fg, put};
 use crate::app::{FocusRegion, Model};
 use crate::clock::Clock;
+use crate::command::{CommandId, key_label};
 
 pub(crate) fn render(frame: &mut Frame<'_>, main: Rect, model: &Model, clock: Clock) {
     let list = geometry::all_tasks(model, main);
@@ -64,10 +65,14 @@ pub(crate) fn render(frame: &mut Frame<'_>, main: Rect, model: &Model, clock: Cl
 fn render_empty(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     let query = &model.ui.search.query;
     let line = if query.is_empty() {
-        Line::from(Span::styled(
-            "No tasks yet · n to add one · ? for all keys",
-            faint(model),
-        ))
+        let mut text = "No tasks yet".to_owned();
+        if let Some(key) = key_label(CommandId::NewTask) {
+            text.push_str(&format!(" · {key} to add one"));
+        }
+        if let Some(key) = key_label(CommandId::Help) {
+            text.push_str(&format!(" · {key} for all keys"));
+        }
+        Line::from(Span::styled(text, faint(model)))
     } else {
         Line::from(vec![
             Span::styled("No matches for ", faint(model)),

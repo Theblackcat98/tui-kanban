@@ -56,12 +56,12 @@ pub struct Persistence {
 }
 
 impl Persistence {
-    /// Loads the board (or a new one, if there is no file) and starts the
-    /// saver.
-    pub fn open(store: JsonStore) -> Result<(Self, Board), StoreError> {
+    /// Loads the board (or `new_board`, if there is no file) and starts
+    /// the saver.
+    pub fn open(store: JsonStore, new_board: Board) -> Result<(Self, Board), StoreError> {
         let loaded = store.read()?;
         let known = loaded.as_ref().map(|loaded| loaded.fingerprint);
-        let board = loaded.map(|loaded| loaded.board).unwrap_or_default();
+        let board = loaded.map_or(new_board, |loaded| loaded.board);
         let persistence = Self {
             saver: Saver::spawn(store.clone()),
             store,

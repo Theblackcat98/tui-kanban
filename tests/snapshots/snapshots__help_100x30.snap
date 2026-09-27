@@ -13,6 +13,7 @@ expression: "harness.screen(100, 30)"
                        │   g + letter          lane by its initial          │
                        │   Tab / Shift+Tab     focus rail / cards           │Snapshot tests
                        │   v                   Board / All tasks            │◷ 1d ago
+                       │   b                   switch board                 │
                        │                                                    │
                        │ Tasks                                              │
                        │   Enter               open details                 │
@@ -27,7 +28,6 @@ expression: "harness.screen(100, 30)"
                        │   J/K                 move task down / up          │
                        │   u/U  Ctrl+Z/Ctrl+R  undo / redo                  │
                        │   /                   search                       │
-                       │   Esc                 back / clear search          │
                        │                                                    │
                        │ ↓ more   j/k scroll   Esc close                    │
                        ╰────────────────────────────────────────────────────╯

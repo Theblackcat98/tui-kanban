@@ -5,8 +5,10 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 
 use uuid::Uuid;
 
+use std::path::PathBuf;
+
 use super::editor::EditorField;
-use super::model::{Model, Screen};
+use super::model::{BoardEntry, Model, Screen};
 use crate::command::{self, CommandId, Context};
 use crate::domain::Board;
 use crate::tui::event::accepts_key;
@@ -54,6 +56,16 @@ pub enum Action {
     /// The runtime has saved everything it could after an
     /// [`Effect::Quit`]: quit, unless something is still unsaved.
     FinishQuit,
+    /// The boards the switcher offers, read by the runtime.
+    ShowBoards(Vec<BoardEntry>),
+    /// The runtime has saved everything it could after an
+    /// [`Effect::SwitchBoard`]: open the board at the path, unless
+    /// something is still unsaved.
+    SwitchReady(PathBuf),
+    /// Another board was opened, replacing this one.
+    BoardOpened(Board),
+    /// Another board couldn't be opened.
+    OpenBoardFailed(String),
 }
 
 /// Where text edited in `$EDITOR` goes back to.
@@ -84,6 +96,17 @@ pub enum Effect {
     },
     /// Finish saving, then report back with [`Action::FinishQuit`].
     Quit,
+    /// Read the recent boards for the switcher, and report back with
+    /// [`Action::ShowBoards`].
+    ListBoards,
+    /// Finish saving this board, then report back with
+    /// [`Action::SwitchReady`].
+    SwitchBoard(PathBuf),
+    /// Open the board at the path in place of this one, reporting back
+    /// with [`Action::BoardOpened`] or [`Action::OpenBoardFailed`].
+    LoadBoard(PathBuf),
+    /// Add this board to the recent boards.
+    RememberBoard,
     /// Stop the app now.
     Exit,
 }

@@ -5,6 +5,7 @@
 //! they can't drift apart.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::sync::OnceLock;
 
 /// Where the user is, which decides what keys mean.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,10 +45,14 @@ pub enum Context {
     Colors = 1 << 17,
     /// Moving a task into a column at its work-in-progress limit.
     ConfirmWip = 1 << 18,
+    /// The board switcher.
+    Boards = 1 << 19,
+    /// No board was found where tui-kanban started.
+    NoBoard = 1 << 20,
 }
 
 impl Context {
-    pub const ALL: [Context; 19] = [
+    pub const ALL: [Context; 21] = [
         Context::Board,
         Context::AllTasks,
         Context::Rail,
@@ -67,6 +72,8 @@ impl Context {
         Context::DeleteColumn,
         Context::Colors,
         Context::ConfirmWip,
+        Context::Boards,
+        Context::NoBoard,
     ];
 
     /// The name shown in the status line's mode pill and help's title.
@@ -91,6 +98,8 @@ impl Context {
             Self::DeleteColumn => "DELETE",
             Self::Colors => "COLOUR",
             Self::ConfirmWip => "LIMIT",
+            Self::Boards => "BOARDS",
+            Self::NoBoard => "WELCOME",
         }
     }
 
@@ -116,6 +125,8 @@ impl Context {
             Self::DeleteColumn => "Delete column",
             Self::Colors => "Column colour",
             Self::ConfirmWip => "Work-in-progress limit",
+            Self::Boards => "Boards",
+            Self::NoBoard => "No board here",
         }
     }
 }
@@ -149,7 +160,7 @@ const UNDO: Contexts = Contexts::of(&[
     Context::Detail,
 ]);
 const TASK_ACTIONS: Contexts = Contexts::of(&[Context::Board, Context::AllTasks, Context::Detail]);
-const MENUS: Contexts = Contexts::of(&[Context::MoveTo, Context::Colors]);
+const MENUS: Contexts = Contexts::of(&[Context::MoveTo, Context::Colors, Context::Boards]);
 
 const fn only(context: Context) -> Contexts {
     Contexts(context as u32)
@@ -291,6 +302,10 @@ pub enum CommandId {
     PickColor,
     MoveAnyway,
     CancelMove,
+    SwitchBoard,
+    OpenBoard,
+    CreateHere,
+    OpenPersonal,
     HelpScrollUp,
     HelpScrollDown,
     CloseHelp,
@@ -530,7 +545,7 @@ impl Command {
 
     /// Whether this command is shown as part of another command's pair.
     pub fn is_paired_into_another(&self) -> bool {
-        COMMANDS
+        commands()
             .iter()
             .any(|other| other.pair.is_some_and(|pair| pair.with == self.id))
     }
@@ -728,6 +743,13 @@ pub const COMMANDS: &[Command] = &[
         DASHBOARD,
     )
     .hint(4, "view"),
+    Command::new(
+        C::SwitchBoard,
+        &[ch('b')],
+        "switch board",
+        G::Navigation,
+        DASHBOARD,
+    ),
     // Tasks
     Command::new(
         C::OpenDetail,
@@ -1169,6 +1191,30 @@ pub const COMMANDS: &[Command] = &[
     )
     .hint(3, "cancel"),
     Command::new(
+        C::OpenBoard,
+        &[key(KeyCode::Enter)],
+        "boards: open",
+        G::Editing,
+        only(Context::Boards),
+    )
+    .hint(1, "open"),
+    Command::new(
+        C::CreateHere,
+        &[ch('c')],
+        "create a board here",
+        G::Editing,
+        only(Context::NoBoard),
+    )
+    .hint(1, "create here"),
+    Command::new(
+        C::OpenPersonal,
+        &[ch('p')],
+        "open your personal board",
+        G::Editing,
+        only(Context::NoBoard),
+    )
+    .hint(2, "personal board"),
+    Command::new(
         C::PickColor,
         &[key(KeyCode::Enter)],
         "colour: set",
@@ -1319,6 +1365,7 @@ pub const COMMANDS: &[Command] = &[
             Context::AllTasks,
             Context::Rail,
             Context::TooSmall,
+            Context::NoBoard,
         ]),
     ),
     Command::new(
@@ -1336,8 +1383,254 @@ pub const COMMANDS: &[Command] = &[
     ),
 ];
 
+/// The command table in use: [`COMMANDS`], with any keys the config file
+/// changed (see [`remap`] and [`install`]).
+pub fn commands() -> &'static [Command] {
+    ACTIVE.get().copied().unwrap_or(COMMANDS)
+}
+
+static ACTIVE: OnceLock<&'static [Command]> = OnceLock::new();
+
+/// Makes `table` the command table for the rest of the run. Only the
+/// first call has any effect.
+pub fn install(table: &'static [Command]) {
+    let _ = ACTIVE.set(table);
+}
+
+/// Commands whose keys can't be changed: digits and `g` + letter carry
+/// the lane they name, and `g` and Space start the chords after them.
+const FIXED: [CommandId; 4] = [
+    CommandId::JumpToLane,
+    CommandId::GoToLane,
+    CommandId::GoPrefix,
+    CommandId::Leader,
+];
+
+impl CommandId {
+    /// The command's name in the config file, as in `new_task`.
+    pub fn name(self) -> String {
+        let mut name = String::new();
+        for (index, character) in format!("{self:?}").chars().enumerate() {
+            if character.is_uppercase() && index > 0 {
+                name.push('_');
+            }
+            name.extend(character.to_lowercase());
+        }
+        name
+    }
+
+    /// The command called `name` in the config file.
+    pub fn from_name(name: &str) -> Option<Self> {
+        COMMANDS
+            .iter()
+            .map(|command| command.id)
+            .find(|id| id.name() == name)
+    }
+
+    /// Whether the config file can change the command's keys.
+    pub fn remappable(self) -> bool {
+        !FIXED.contains(&self)
+    }
+}
+
+/// The command table with some commands' keys replaced, checked so that
+/// no two commands share a key where both apply. The table is kept for
+/// the rest of the run, so pass it to [`install`].
+pub fn remap(changes: &[(CommandId, Vec<Key>)]) -> Result<&'static [Command], String> {
+    let mut table: Vec<Command> = COMMANDS.to_vec();
+    for (id, keys) in changes {
+        if !id.remappable() {
+            return Err(format!("the keys for {} can't be changed", id.name()));
+        }
+        if keys
+            .iter()
+            .any(|key| key.prefix.is_some_and(|prefix| prefix != 'g'))
+        {
+            return Err(format!(
+                "{}: only g can start a two-key chord, as in \"g g\"",
+                id.name()
+            ));
+        }
+        let command = table
+            .iter_mut()
+            .find(|command| command.id == *id)
+            .expect("every CommandId has a row in COMMANDS");
+        command.keys = Box::leak(keys.clone().into_boxed_slice());
+    }
+    check_conflicts(&table)?;
+    Ok(Box::leak(table.into_boxed_slice()))
+}
+
+/// Fails if two commands share a key in a context where both apply.
+fn check_conflicts(table: &[Command]) -> Result<(), String> {
+    for context in Context::ALL {
+        let commands: Vec<&Command> = table
+            .iter()
+            .filter(|command| command.contexts.contains(context))
+            .collect();
+        for (index, first) in commands.iter().enumerate() {
+            for second in &commands[index + 1..] {
+                if let Some(key) = first.keys.iter().find(|key| second.keys.contains(key)) {
+                    return Err(format!(
+                        "{} is used by both {} and {} ({})",
+                        key.config_name(),
+                        first.id.name(),
+                        second.id.name(),
+                        context.title()
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Key names in the config file, and what they mean.
+const KEY_NAMES: [(&str, KeyCode); 16] = [
+    ("space", KeyCode::Char(' ')),
+    ("enter", KeyCode::Enter),
+    ("esc", KeyCode::Esc),
+    ("escape", KeyCode::Esc),
+    ("tab", KeyCode::Tab),
+    ("backtab", KeyCode::BackTab),
+    ("backspace", KeyCode::Backspace),
+    ("del", KeyCode::Delete),
+    ("delete", KeyCode::Delete),
+    ("up", KeyCode::Up),
+    ("down", KeyCode::Down),
+    ("left", KeyCode::Left),
+    ("right", KeyCode::Right),
+    ("home", KeyCode::Home),
+    ("end", KeyCode::End),
+    ("pgup", KeyCode::PageUp),
+];
+
+impl Key {
+    /// Reads a key as written in the config file: a character (`n`, `N`,
+    /// `?`), a name (`enter`, `pgdn`, `f5`), either with `ctrl+`, `alt+`
+    /// or `shift+` in front, or `g` and a key for a chord (`g g`).
+    pub fn parse(text: &str) -> Result<Key, String> {
+        let text = text.trim();
+        let invalid = || format!("unknown key {text:?}");
+        let (prefix, rest) = match text.split_once(' ') {
+            Some((prefix, rest)) if !rest.trim().is_empty() => {
+                let mut characters = prefix.chars();
+                match (characters.next(), characters.next()) {
+                    (Some(prefix), None) => (Some(prefix), rest.trim()),
+                    _ => return Err(invalid()),
+                }
+            }
+            _ => (None, text),
+        };
+        let mut modifiers = KeyModifiers::NONE;
+        let mut name = rest;
+        // "+" alone, or at the end as in "ctrl++", is the plus key.
+        while let Some((modifier, after)) =
+            name.split_once('+').filter(|(_, after)| !after.is_empty())
+        {
+            modifiers |= match modifier.to_lowercase().as_str() {
+                "ctrl" | "control" => KeyModifiers::CONTROL,
+                "alt" | "meta" => KeyModifiers::ALT,
+                "shift" => KeyModifiers::SHIFT,
+                _ => return Err(invalid()),
+            };
+            name = after;
+        }
+        let mut characters = name.chars();
+        let code = match (characters.next(), characters.next()) {
+            (Some(character), None) => KeyCode::Char(character),
+            _ => {
+                let lower = name.to_lowercase();
+                let named = KEY_NAMES
+                    .iter()
+                    .chain(&[("pgdn", KeyCode::PageDown), ("pageup", KeyCode::PageUp)])
+                    .chain(&[("pagedown", KeyCode::PageDown), ("insert", KeyCode::Insert)])
+                    .find(|(candidate, _)| *candidate == lower)
+                    .map(|(_, code)| *code);
+                match named {
+                    Some(code) => code,
+                    None => match lower.strip_prefix('f').and_then(|n| n.parse::<u8>().ok()) {
+                        Some(number @ 1..=12) => KeyCode::F(number),
+                        _ => return Err(invalid()),
+                    },
+                }
+            }
+        };
+        // Shift is part of a character (H, not shift+h), and Shift+Tab
+        // is its own key.
+        let code = match code {
+            KeyCode::Char(character) if modifiers.contains(KeyModifiers::SHIFT) => {
+                KeyCode::Char(character.to_ascii_uppercase())
+            }
+            KeyCode::Tab if modifiers.contains(KeyModifiers::SHIFT) => KeyCode::BackTab,
+            code => code,
+        };
+        modifiers.remove(KeyModifiers::SHIFT);
+        let code = match code {
+            KeyCode::Char(character) if modifiers.contains(KeyModifiers::CONTROL) => {
+                KeyCode::Char(character.to_ascii_lowercase())
+            }
+            code => code,
+        };
+        Ok(Key {
+            prefix,
+            code,
+            modifiers,
+        })
+    }
+
+    /// The key as written in the config file; [`Key::parse`] reads it back.
+    pub fn config_name(self) -> String {
+        let name = match self.code {
+            KeyCode::Char(character) => KEY_NAMES
+                .iter()
+                .find(|(_, code)| *code == self.code)
+                .map_or(character.to_string(), |(name, _)| (*name).to_owned()),
+            KeyCode::BackTab => "shift+tab".to_owned(),
+            KeyCode::PageDown => "pgdn".to_owned(),
+            KeyCode::F(number) => format!("f{number}"),
+            KeyCode::Insert => "insert".to_owned(),
+            code => KEY_NAMES
+                .iter()
+                .find(|(_, candidate)| *candidate == code)
+                .map_or_else(
+                    || format!("{code:?}").to_lowercase(),
+                    |(name, _)| (*name).to_owned(),
+                ),
+        };
+        let mut text = String::new();
+        if let Some(prefix) = self.prefix {
+            text.push(prefix);
+            text.push(' ');
+        }
+        if self.modifiers.contains(KeyModifiers::CONTROL) {
+            text.push_str("ctrl+");
+        }
+        if self.modifiers.contains(KeyModifiers::ALT) {
+            text.push_str("alt+");
+        }
+        text.push_str(&name);
+        text
+    }
+}
+
+/// How a command's first key is written in messages, as "u" in "u to
+/// undo", or `None` if the config file left it without keys.
+pub fn key_label(id: CommandId) -> Option<String> {
+    command(id).keys.first().map(|key| key.label())
+}
+
+/// `message`, followed by how to undo it, as in "Task deleted · u to
+/// undo".
+pub fn with_undo_hint(message: &str) -> String {
+    match key_label(CommandId::Undo) {
+        Some(key) => format!("{message} · {key} to undo"),
+        None => message.to_owned(),
+    }
+}
+
 pub fn command(id: CommandId) -> &'static Command {
-    COMMANDS
+    commands()
         .iter()
         .find(|command| command.id == id)
         .expect("every CommandId has a row in COMMANDS")
@@ -1351,7 +1644,7 @@ pub fn lookup(context: Context, event: &KeyEvent) -> Option<CommandId> {
 /// The command a key runs in a context after `prefix` was pressed (or
 /// with no prefix), if any.
 pub fn lookup_after(context: Context, prefix: Option<char>, event: &KeyEvent) -> Option<CommandId> {
-    COMMANDS
+    commands()
         .iter()
         .filter(|command| command.contexts.contains(context))
         .find(|command| {
@@ -1365,7 +1658,7 @@ pub fn lookup_after(context: Context, prefix: Option<char>, event: &KeyEvent) ->
 
 /// The commands available in a context, for help and hints.
 pub fn available(context: Context) -> impl Iterator<Item = &'static Command> {
-    COMMANDS
+    commands()
         .iter()
         .filter(move |command| command.contexts.contains(context))
 }
@@ -1494,6 +1787,74 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn commands_have_config_names() {
+        assert_eq!(C::NewTask.name(), "new_task");
+        assert_eq!(C::MoveTaskLeft.name(), "move_task_left");
+        assert_eq!(CommandId::from_name("open_palette"), Some(C::OpenPalette));
+        assert_eq!(CommandId::from_name("nope"), None);
+    }
+
+    #[test]
+    fn every_key_in_the_table_reads_back_from_its_config_name() {
+        for command in COMMANDS {
+            for key in command.keys {
+                let name = key.config_name();
+                assert_eq!(Key::parse(&name), Ok(*key), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn keys_are_read_as_people_write_them() {
+        let parse = |text: &str| Key::parse(text).unwrap();
+        assert_eq!(parse("Ctrl+K"), ctrl('k'));
+        assert_eq!(parse("shift+h"), ch('H'));
+        assert_eq!(parse("Shift+Tab"), key(KeyCode::BackTab));
+        assert_eq!(parse("PageDown"), key(KeyCode::PageDown));
+        assert_eq!(parse("+"), ch('+'));
+        assert_eq!(parse("g x"), after_g('x'));
+        assert_eq!(parse("f5"), key(KeyCode::F(5)));
+        assert_eq!(
+            parse("alt+x"),
+            Key {
+                modifiers: KeyModifiers::ALT,
+                ..ch('x')
+            }
+        );
+        for bad in ["", "hyper+x", "f13", "nonsense", "gg x"] {
+            assert!(Key::parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn remapping_checks_for_clashes() {
+        let table = remap(&[(C::NewTask, vec![ch('+')])]).unwrap();
+        let new_task = table
+            .iter()
+            .find(|command| command.id == C::NewTask)
+            .unwrap();
+        assert_eq!(new_task.keys, [ch('+')]);
+        // n is now free, so another command can take it.
+        assert!(remap(&[(C::NewTask, vec![ch('+')]), (C::Search, vec![ch('n')])]).is_ok());
+        let clash = remap(&[(C::Search, vec![ch('n')])]).unwrap_err();
+        assert!(
+            clash.contains("new_task") && clash.contains("search"),
+            "{clash}"
+        );
+        assert!(remap(&[(C::JumpToLane, vec![ch('x')])]).is_err());
+        assert!(
+            remap(&[(
+                C::Search,
+                vec![Key {
+                    prefix: Some('z'),
+                    ..ch('x')
+                }]
+            )])
+            .is_err()
+        );
     }
 
     #[test]

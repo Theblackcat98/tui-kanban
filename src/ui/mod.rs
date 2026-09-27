@@ -95,6 +95,12 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
             Screen::Colors { column, selected } => {
                 menu::render_colors(frame, area, model, *column, *selected, clock)
             }
+            Screen::Boards { entries, selected } => {
+                menu::render_boards(frame, area, model, entries, *selected, clock)
+            }
+            Screen::NoBoard { directory, .. } => {
+                confirm::render_no_board(frame, area, model, directory, clock)
+            }
             Screen::ConfirmWip { column, .. } => {
                 confirm::render_wip(frame, area, model, *column, clock)
             }

@@ -162,7 +162,7 @@ impl Updater<'_> {
         match self.model.ui.screens.last() {
             Some(Screen::Help { .. }) => return self.scroll_help(3 * direction as i16),
             Some(Screen::Palette(_)) => return self.move_palette(direction),
-            Some(Screen::MoveTo { .. } | Screen::Colors { .. }) => {
+            Some(Screen::MoveTo { .. } | Screen::Colors { .. } | Screen::Boards { .. }) => {
                 return self.move_menu(direction);
             }
             Some(Screen::Detail { .. }) | None => {}

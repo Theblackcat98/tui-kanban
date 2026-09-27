@@ -34,7 +34,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, task: Uui
         model,
         "Delete task",
         &question,
-        "You can undo this with u.",
+        &undo_note(),
         Context::Confirm,
         clock,
     );
@@ -66,7 +66,7 @@ pub(crate) fn render_delete_column(
         format!("Its {count} tasks")
     };
     let detail = match tasks_to.and_then(|target| columns.get(target)) {
-        _ if count == 0 => "It has no tasks. You can undo this with u.".to_owned(),
+        _ if count == 0 => format!("It has no tasks. {}", undo_note()),
         Some(target) => format!("{tasks} move to ‹ {} ›", target.name),
         None => format!("{tasks} are deleted too ‹ h / l ›"),
     };
@@ -111,6 +111,14 @@ pub(crate) fn render_wip(
         Context::ConfirmWip,
         clock,
     );
+}
+
+/// "You can undo this with u.", with the key in use.
+fn undo_note() -> String {
+    match crate::command::key_label(crate::command::CommandId::Undo) {
+        Some(key) => format!("You can undo this with {key}."),
+        None => "You can undo this from the command palette.".to_owned(),
+    }
 }
 
 /// "Discard changes?", when an edited draft is cancelled.
@@ -173,10 +181,67 @@ fn dialog(
     context: Context,
     clock: Clock,
 ) {
+    dialog_in(
+        frame,
+        area,
+        model,
+        (title, 52),
+        model.ui.theme.danger,
+        question,
+        detail,
+        context,
+        clock,
+    );
+}
+
+/// "No board here": create one, or open the personal board.
+pub(crate) fn render_no_board(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    directory: &str,
+    clock: Clock,
+) {
+    let question = |width: usize| {
+        format!(
+            "No board in {}",
+            truncate_text(directory, width.saturating_sub(12))
+        )
+    };
+    let detail = if model.command_enabled(crate::command::CommandId::OpenPersonal) {
+        "Create one here, open your personal board, or q to quit."
+    } else {
+        "Create one here, or q to quit."
+    };
+    dialog_in(
+        frame,
+        area,
+        model,
+        ("Welcome", 62),
+        model.ui.theme.accent,
+        &question,
+        detail,
+        Context::NoBoard,
+        clock,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dialog_in(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    (title, width): (&str, u16),
+    border: ratatui::style::Color,
+    question: &dyn Fn(usize) -> String,
+    detail: &str,
+    context: Context,
+    clock: Clock,
+) {
     let theme = &model.ui.theme;
-    let modal = centered_rect(area, 52, 8);
+    let modal = centered_rect(area, width, 8);
     frame.render_widget(Clear, modal);
-    let block = overlay_block(model, title, theme.danger);
+    let block = overlay_block(model, title, border);
     let inner = block.inner(modal);
     frame.render_widget(block, modal);
     let inner = Rect::new(

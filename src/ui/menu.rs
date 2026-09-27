@@ -21,7 +21,7 @@ use super::text::{self, truncate_text};
 use super::{
     AnimationKind, centered_rect, fade_in, faint, fg, fill, muted, overlay_block, progress, put,
 };
-use crate::app::Model;
+use crate::app::{BoardEntry, Model};
 use crate::clock::Clock;
 use crate::command::Context;
 
@@ -32,7 +32,8 @@ struct Row {
     name: String,
     /// The colour of the highlight's edge.
     accent: Color,
-    current: bool,
+    /// Faint text after the name, as "current".
+    marker: String,
 }
 
 pub(crate) fn render(
@@ -60,7 +61,7 @@ pub(crate) fn render(
             ),
             name: column.name.clone(),
             accent: super::lane_color(model, index),
-            current: current == Some(index),
+            marker: marker(current == Some(index)),
         })
         .collect();
     let title = model
@@ -100,7 +101,7 @@ pub(crate) fn render_colors(
         lead: Span::styled("■ ", fg(automatic)),
         name: "Automatic".to_owned(),
         accent: automatic,
-        current: current.is_none(),
+        marker: marker(current.is_none()),
     }];
     for name in theme.accent_names() {
         let color = theme.column_color(&data.id, Some(name));
@@ -108,7 +109,7 @@ pub(crate) fn render_colors(
             lead: Span::styled("■ ", fg(color)),
             name: name.to_owned(),
             accent: color,
-            current: current.is_some_and(|current| current.eq_ignore_ascii_case(name)),
+            marker: marker(current.is_some_and(|current| current.eq_ignore_ascii_case(name))),
         });
     }
     let title = format!("Colour for {}", truncate_text(&data.name, 24));
@@ -120,6 +121,44 @@ pub(crate) fn render_colors(
         &rows,
         selected,
         Context::Colors,
+        clock,
+    );
+}
+
+fn marker(current: bool) -> String {
+    if current { "current" } else { "" }.to_owned()
+}
+
+/// The board switcher: each board's name, then its task count and where
+/// it is.
+pub(crate) fn render_boards(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    entries: &[BoardEntry],
+    selected: usize,
+    clock: Clock,
+) {
+    let rows: Vec<Row> = entries
+        .iter()
+        .map(|entry| Row {
+            lead: Span::styled(
+                if entry.current { "● " } else { "  " },
+                fg(model.ui.theme.accent),
+            ),
+            name: entry.name.clone(),
+            accent: model.ui.theme.accent,
+            marker: entry.detail.clone(),
+        })
+        .collect();
+    render_menu(
+        frame,
+        area,
+        model,
+        "Boards",
+        &rows,
+        selected,
+        Context::Boards,
         clock,
     );
 }
@@ -141,8 +180,13 @@ fn render_menu(
         .map(|row| text::width(&row.name))
         .max()
         .unwrap_or(0);
-    // Border and padding, then "▌9 " + name + "  current".
-    let width = (name_width as u16 + 16).clamp(40, 60);
+    let marker_width = rows
+        .iter()
+        .map(|row| text::width(&row.marker))
+        .max()
+        .unwrap_or(0);
+    // Border and padding, then "▌9 " + name + "  " + marker.
+    let width = (name_width as u16 + marker_width as u16 + 9).clamp(40, 76);
     let height = rows.len() as u16 + 5;
     let modal = centered_rect(area, width, height);
     frame.render_widget(Clear, modal);
@@ -179,11 +223,14 @@ fn render_menu(
                 Line::from(Span::styled("▌", fg(entry.accent))),
             );
         }
-        let marker = if entry.current { "  current" } else { "" };
-        let name_room = (list.width as usize)
-            .saturating_sub(3 + marker.len() + 1)
-            .min(name_width);
+        let name_room = (list.width as usize).saturating_sub(4).min(name_width);
         let name = truncate_text(&entry.name, name_room);
+        let marker_room = (list.width as usize).saturating_sub(4 + name_room + 2);
+        let marker = if entry.marker.is_empty() {
+            String::new()
+        } else {
+            format!("  {}", truncate_text(&entry.marker, marker_room))
+        };
         let padding = " ".repeat(name_room.saturating_sub(text::width(&name)));
         let name_style = if highlighted {
             fg(theme.text).add_modifier(Modifier::BOLD)

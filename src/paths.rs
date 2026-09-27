@@ -1,6 +1,7 @@
-//! Where tui-kanban keeps files outside the board: themes in the config
-//! directory, and small bits of state (such as a dismissed tip) in the
-//! state directory.
+//! Where tui-kanban keeps files outside a project's board: the config file
+//! and themes in the config directory, personal boards in the data
+//! directory, and small bits of state (a dismissed tip, recent boards) in
+//! the state directory.
 
 use std::env;
 use std::path::PathBuf;
@@ -33,4 +34,27 @@ pub fn state_dir() -> Option<PathBuf> {
         non_empty("HOME").map(|home| home.join(".local").join("state"))
     };
     base.map(|dir| dir.join("tui-kanban"))
+}
+
+/// `$XDG_DATA_HOME/tui-kanban`, `%APPDATA%\tui-kanban` on Windows, or
+/// `~/.local/share/tui-kanban`: where personal boards live.
+pub fn data_dir() -> Option<PathBuf> {
+    let base = if let Some(dir) = non_empty("XDG_DATA_HOME") {
+        Some(dir)
+    } else if cfg!(windows) {
+        non_empty("APPDATA")
+    } else {
+        non_empty("HOME").map(|home| home.join(".local").join("share"))
+    };
+    base.map(|dir| dir.join("tui-kanban"))
+}
+
+/// `~/.config/tui-kanban/config.toml`, or its equivalent.
+pub fn config_file() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("tui-kanban").join("config.toml"))
+}
+
+/// The home directory, where searching upwards for a board stops.
+pub fn home_dir() -> Option<PathBuf> {
+    non_empty(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
 }

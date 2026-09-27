@@ -10,6 +10,7 @@ use super::Updater;
 use crate::animation::AnimationKind;
 use crate::app::input::TextInput;
 use crate::app::model::{PromptKind, Screen, ToastKind};
+use crate::command;
 
 impl Updater<'_> {
     /// Opens the prompt for a new column after the active one, or for the
@@ -153,13 +154,14 @@ impl Updater<'_> {
                 self.model.ui.selected = None;
                 self.model.reconcile_selection();
                 let message = match (count, target) {
-                    (0, _) => format!("Deleted {name} · u to undo"),
+                    (0, _) => format!("Deleted {name}"),
                     (_, Some(target)) => format!(
-                        "Deleted {name}, its tasks moved to {} · u to undo",
+                        "Deleted {name}, its tasks moved to {}",
                         self.column_name(target)
                     ),
-                    (_, None) => format!("Deleted {name} and its tasks · u to undo"),
+                    (_, None) => format!("Deleted {name} and its tasks"),
                 };
+                let message = command::with_undo_hint(&message);
                 self.toast(message, ToastKind::Info, Duration::from_secs(5));
                 self.animate(AnimationKind::CardMove, 220);
             }
