@@ -10,7 +10,7 @@
         {
           "id": "00000000-0000-4000-8000-000000000001",
           "title": "Write the README",
-          "description": "Cover install, usage, keys and the board file format.",
+          "description": "Cover install, usage, keys and the board file format.\n\n- [x] Install\n- [x] Usage\n- [ ] Keys, from the command table\n- [ ] Screenshots",
           "created_at": 1787820000000,
           "updated_at": 1787906400000
         },
@@ -34,6 +34,7 @@
       "id": "in-progress",
       "name": "In Progress",
       "color": "peach",
+      "wip_limit": 3,
       "tasks": [
         {
           "id": "00000000-0000-4000-8000-000000000004",

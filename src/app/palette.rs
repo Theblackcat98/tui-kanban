@@ -88,10 +88,11 @@ pub fn entries(model: &Model, palette: &Palette) -> Vec<Entry> {
             .unwrap_or(usize::MAX);
         let group = match command.group {
             Group::Tasks => 0,
-            Group::Details => 1,
-            Group::Navigation => 2,
-            Group::General => 3,
-            Group::Editing => 4,
+            Group::Columns => 1,
+            Group::Details => 2,
+            Group::Navigation => 3,
+            Group::General => 4,
+            Group::Editing => 5,
         };
         (recency, group)
     });

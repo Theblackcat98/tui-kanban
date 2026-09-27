@@ -1,7 +1,9 @@
 pub mod animation;
 pub mod app;
+pub mod boards;
 pub mod clock;
 pub mod command;
+pub mod config;
 pub mod domain;
 pub mod layout;
 pub mod markdown;

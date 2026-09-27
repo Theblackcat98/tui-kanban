@@ -10,7 +10,7 @@ use super::text::{self, input_view, truncate_text};
 use super::{AnimationKind, blend_color, faint, fg, fill, muted, progress, put};
 use crate::app::{Model, SaveState, ToastKind, ViewMode};
 use crate::clock::Clock;
-use crate::command::{self, Context};
+use crate::command::{self, CommandId, Context};
 
 pub(crate) fn render_top(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     let theme = &model.ui.theme;
@@ -22,23 +22,61 @@ pub(crate) fn render_top(frame: &mut Frame<'_>, area: Rect, model: &Model) {
             Span::styled(label, faint(model))
         }
     };
-    let views = [
-        Span::raw("   "),
-        view("Board", model.ui.view == ViewMode::Board),
-        Span::styled(" · ", faint(model)),
-        view("All tasks", model.ui.view == ViewMode::AllTasks),
-    ];
-    let views_width: usize = views.iter().map(Span::width).sum();
-    let room = (area.width as usize).saturating_sub(2);
-    let name_room = room.saturating_sub(views_width).max(room.min(12));
+    let (name, show_views) = top_name(model, area);
     let mut spans = vec![Span::styled(
-        truncate_text(&model.board.name, name_room),
+        name,
         fg(theme.text).add_modifier(Modifier::BOLD),
     )];
-    if name_room + views_width <= room {
-        spans.extend(views);
+    if show_views {
+        spans.extend([
+            Span::raw(VIEW_GAP),
+            view(VIEWS[0].0, model.ui.view == ViewMode::Board),
+            Span::styled(VIEW_SEPARATOR, faint(model)),
+            view(VIEWS[1].0, model.ui.view == ViewMode::AllTasks),
+        ]);
     }
-    put(frame, area.x + 1, area.y, room as u16, Line::from(spans));
+    let room = area.width.saturating_sub(2);
+    put(frame, area.x + 1, area.y, room, Line::from(spans));
+}
+
+const VIEWS: [(&str, ViewMode); 2] = [
+    ("Board", ViewMode::Board),
+    ("All tasks", ViewMode::AllTasks),
+];
+const VIEW_GAP: &str = "   ";
+const VIEW_SEPARATOR: &str = " · ";
+
+/// The board name as the top bar shows it, cut to fit, and whether the
+/// view names fit after it.
+fn top_name(model: &Model, area: Rect) -> (String, bool) {
+    let views_width = VIEW_GAP.len()
+        + text::width(VIEWS[0].0)
+        + VIEW_SEPARATOR.chars().count()
+        + text::width(VIEWS[1].0);
+    let room = (area.width as usize).saturating_sub(2);
+    let name_room = room.saturating_sub(views_width).max(room.min(12));
+    (
+        truncate_text(&model.board.name, name_room),
+        name_room + views_width <= room,
+    )
+}
+
+/// Where the top bar's view names are, for the mouse.
+pub(crate) fn view_tabs(model: &Model, area: Rect) -> Vec<(Rect, ViewMode)> {
+    let (name, show_views) = top_name(model, area);
+    if !show_views {
+        return Vec::new();
+    }
+    let mut x = area.x + 1 + (text::width(&name) + VIEW_GAP.len()) as u16;
+    VIEWS
+        .iter()
+        .map(|(label, view)| {
+            let width = text::width(label) as u16;
+            let tab = Rect::new(x, area.y, width, 1);
+            x += width + VIEW_SEPARATOR.chars().count() as u16;
+            (tab, *view)
+        })
+        .collect()
 }
 
 /// The filter bar, below the top bar while a search is active: the search
@@ -141,27 +179,7 @@ pub(crate) fn render_status(frame: &mut Frame<'_>, area: Rect, model: &Model, cl
     let theme = &model.ui.theme;
     fill(frame, area, Style::default().bg(theme.panel));
     let context = model.context();
-    let pill = if theme.is_monochrome() {
-        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
-    } else {
-        Style::default()
-            .fg(theme.panel)
-            .bg(theme.accent)
-            .add_modifier(Modifier::BOLD)
-    };
-    let (icon, icon_color, status) = match model.session.save_state {
-        SaveState::Saved => ("●", theme.success, "saved"),
-        SaveState::Saving => ("◌", theme.text_muted, "saving"),
-        SaveState::Failed(_) => ("✕", theme.danger, "not saved"),
-        SaveState::Conflict => ("✕", theme.warning, "changed on disk"),
-    };
-    let mut spans = vec![
-        Span::styled(format!(" {} ", context.label()), pill),
-        Span::raw("  "),
-        Span::styled(icon, fg(icon_color)),
-        Span::styled(format!(" {status}"), faint(model)),
-        Span::raw("   "),
-    ];
+    let mut spans = status_prefix(model);
     let used: usize = spans.iter().map(Span::width).sum();
     let room = (area.width as usize).saturating_sub(used + 1);
     match &model.session.toast {
@@ -186,40 +204,115 @@ pub(crate) fn render_status(frame: &mut Frame<'_>, area: Rect, model: &Model, cl
     put(frame, area.x, area.y, area.width, Line::from(spans));
 }
 
+/// The start of the status line: the mode pill and the save status.
+fn status_prefix(model: &Model) -> Vec<Span<'static>> {
+    let theme = &model.ui.theme;
+    let pill = if theme.is_monochrome() {
+        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(theme.panel)
+            .bg(theme.accent)
+            .add_modifier(Modifier::BOLD)
+    };
+    let (icon, icon_color, status) = match model.session.save_state {
+        SaveState::Saved => ("●", theme.success, "saved"),
+        SaveState::Saving => ("◌", theme.text_muted, "saving"),
+        SaveState::Failed(_) => ("✕", theme.danger, "not saved"),
+        SaveState::Conflict => ("✕", theme.warning, "changed on disk"),
+    };
+    vec![
+        Span::styled(format!(" {} ", model.context().label()), pill),
+        Span::raw("  "),
+        Span::styled(icon, fg(icon_color)),
+        Span::styled(format!(" {status}"), faint(model)),
+        Span::raw("   "),
+    ]
+}
+
+/// Where the status line's hints are, and the command each runs, for the
+/// mouse. There are none while a toast shows.
+pub(crate) fn status_hints(model: &Model, area: Rect) -> Vec<(Rect, CommandId)> {
+    if model.session.toast.is_some() {
+        return Vec::new();
+    }
+    let used: usize = status_prefix(model).iter().map(Span::width).sum();
+    let room = (area.width as usize).saturating_sub(used + 1);
+    fitted_hints(model, model.context(), room)
+        .into_iter()
+        .map(|hint| {
+            let x = area.x + (used + hint.offset) as u16;
+            (Rect::new(x, area.y, hint.width as u16, 1), hint.id)
+        })
+        .collect()
+}
+
 /// The first-run tip, above the status line, until it is dismissed.
 pub(crate) fn render_tip(frame: &mut Frame<'_>, area: Rect, model: &Model) {
     let theme = &model.ui.theme;
     fill(frame, area, Style::default().bg(theme.panel));
+    let key = |id| {
+        Span::styled(
+            command::key_label(id).unwrap_or_default(),
+            fg(theme.text).add_modifier(Modifier::BOLD),
+        )
+    };
     let line = Line::from(vec![
         Span::styled(" Tip ", fg(theme.info).add_modifier(Modifier::BOLD)),
         Span::styled(" Press ", faint(model)),
-        Span::styled("?", fg(theme.text).add_modifier(Modifier::BOLD)),
+        key(CommandId::Help),
         Span::styled(" for keys, ", faint(model)),
-        Span::styled(":", fg(theme.text).add_modifier(Modifier::BOLD)),
+        key(CommandId::OpenPalette),
         Span::styled(" for commands · ", faint(model)),
-        Span::styled("Esc", fg(theme.text).add_modifier(Modifier::BOLD)),
+        key(CommandId::ClearSearch),
         Span::styled(" to dismiss", faint(model)),
     ]);
     put(frame, area.x, area.y, area.width, line);
+}
+
+/// A footer hint that fits, and where it goes.
+struct FittedHint {
+    keys: String,
+    label: &'static str,
+    id: CommandId,
+    /// Cells from the start of the hints.
+    offset: usize,
+    width: usize,
+}
+
+/// The hints for a context from the command table, most important first,
+/// cut to whole hints that fit in `max_width` cells, three cells apart.
+fn fitted_hints(model: &Model, context: Context, max_width: usize) -> Vec<FittedHint> {
+    let mut fitted = Vec::new();
+    let mut used = 0;
+    for (keys, label, id) in command::hint_commands(context, |id| model.command_enabled(id)) {
+        let separator = if fitted.is_empty() { 0 } else { 3 };
+        let width = text::width(&keys) + 1 + text::width(label);
+        if used + separator + width > max_width {
+            break;
+        }
+        fitted.push(FittedHint {
+            keys,
+            label,
+            id,
+            offset: used + separator,
+            width,
+        });
+        used += separator + width;
+    }
+    fitted
 }
 
 /// The hints for a context from the command table, most important first,
 /// cut to whole hints that fit in `max_width` cells.
 pub(crate) fn hint_line(model: &Model, context: Context, max_width: usize) -> Line<'static> {
     let mut spans = Vec::new();
-    let mut used = 0;
-    for (keys, label) in command::hints(context, |id| model.command_enabled(id)) {
-        let separator = if spans.is_empty() { 0 } else { 3 };
-        let width = text::width(&keys) + 1 + text::width(label);
-        if used + separator + width > max_width {
-            break;
-        }
-        if separator > 0 {
+    for hint in fitted_hints(model, context, max_width) {
+        if !spans.is_empty() {
             spans.push(Span::raw("   "));
         }
-        spans.push(Span::styled(keys, muted(model)));
-        spans.push(Span::styled(format!(" {label}"), faint(model)));
-        used += separator + width;
+        spans.push(Span::styled(hint.keys, muted(model)));
+        spans.push(Span::styled(format!(" {}", hint.label), faint(model)));
     }
     Line::from(spans)
 }

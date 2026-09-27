@@ -4,13 +4,13 @@ expression: "harness.screen(60, 20)"
 ---
  Snapshot Board   Board · All tasks
    ╭ Keys · Board ──────────────────────────────────────╮
- Ba│   H/L                 move task left / right       │
- ▔▔│   J/K                 move task down / up          │▔▔
-   │   u/U  Ctrl+Z/Ctrl+R  undo / redo                  │
- ▌ │   /                   search                       │
- ▌ │   Esc                 back / clear search          │
- ▌ │   Ctrl+N/Ctrl+P       next / previous match        │
-   │   Backspace           remove the last filter term  │
+ Ba│   /                   search                       │
+ ▔▔│   Esc                 back / clear search          │▔▔
+   │   Ctrl+N/Ctrl+P       next / previous match        │
+ ▌ │   Backspace           remove the last filter term  │
+ ▌ │                                                    │
+ ▌ │ Columns                                            │
+   │   z                   collapse / expand lane       │
  ▎ │                                                    │
  ▎ │ General                                            │
  ▎ │   ?                   this help                    │

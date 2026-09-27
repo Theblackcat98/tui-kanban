@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ Snapshot Board   Board · All tasks
+
+  Columns              Backlog  3                In Progress  2            Done  2
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         3
+   In Progress     2   ▌ Write the README        ▎ Calmer card style       ▎ Set up CI
+   Done            2   ▌ Cover install, usage…   ▎ Tiles with an accent…   ▎ fmt, clippy and test…
+                       ▌ ◷ 1d ago                ▎ ◷ 12m ago               ▎ ◷ 5h ago
+
+                       ▎ Record a demo           ▎ Command table           ▎ Snapshot tests
+                       ▎ Commit the .tape fil…   ▎ Every keybinding def…   ▎ ◷ 1d ago
+            ╭ Boards ─────────────────────────────────────────────────────────────────╮
+            │                                                                         │
+            │ ● Snapshot Board  7 tasks · ~/src/tui-kanban                            │
+            │▌  Website         12 tasks · ~/src/website                              │
+            │   Personal        new · ~/.local/share/tui-kanban/boards/personal.json  │
+            │                                                                         │
+            │ Enter open   j/k choose   Esc cancel                                    │
+            ╰─────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+ BOARDS   ● saved   Enter open   j/k choose   Esc cancel

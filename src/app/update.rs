@@ -1,6 +1,7 @@
 //! `update(&mut Model, Action, Clock) -> Vec<Effect>`: the only place the
 //! model changes. It does no I/O, so it can be tested directly.
 
+use ratatui::crossterm::event::MouseEventKind;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -8,13 +9,19 @@ use super::action::{Action, Effect, ExternalTarget};
 use super::editor::{EditorField, EditorState, Placement};
 use super::history::Entry;
 use super::input::TextInput;
-use super::model::{FocusRegion, Model, Pending, SaveState, Screen, Toast, ToastKind, ViewMode};
+use super::model::{
+    FocusRegion, Model, Pending, PromptKind, SaveState, Screen, Toast, ToastKind, ViewMode,
+};
 use super::palette::{self, Palette, Target};
 use crate::animation::AnimationKind;
 use crate::clock::Clock;
 use crate::command::CommandId;
 use crate::domain::{Board, BoardError};
 use crate::ui;
+
+mod boards;
+mod columns;
+mod mouse;
 
 pub fn update(model: &mut Model, action: Action, clock: Clock) -> Vec<Effect> {
     // An error toast stays until the next key press.
@@ -27,6 +34,9 @@ pub fn update(model: &mut Model, action: Action, clock: Clock) -> Vec<Effect> {
             | Action::GoToLane(_)
             | Action::CancelPrefix
             | Action::Paste(_)
+    ) || matches!(
+        action,
+        Action::Mouse(event) if matches!(event.kind, MouseEventKind::Down(_))
     );
     // A prefix waits for exactly one more key.
     if key_press {
@@ -67,6 +77,7 @@ impl Updater<'_> {
             Action::GoToLane(letter) => self.go_to_lane(letter),
             Action::CancelPrefix => {}
             Action::Paste(text) => self.paste(&text),
+            Action::Mouse(event) => self.mouse(event),
             Action::ExternalEditFinished { target, result } => {
                 self.finish_external_edit(target, result)
             }
@@ -92,6 +103,14 @@ impl Updater<'_> {
             Action::Reloaded(board) => self.reload(board),
             Action::ReloadFailed(message) => self.toast(
                 format!("Could not load the changed board: {message}"),
+                ToastKind::Error,
+                None,
+            ),
+            Action::ShowBoards(entries) => self.show_boards(entries),
+            Action::SwitchReady(path) => self.switch_ready(path),
+            Action::BoardOpened(board) => self.board_opened(board),
+            Action::OpenBoardFailed(message) => self.toast(
+                format!("Could not open the board: {message}"),
                 ToastKind::Error,
                 None,
             ),
@@ -140,11 +159,17 @@ impl Updater<'_> {
         }
         self.model.session.save_state = SaveState::Saved;
         let board = &self.model.board;
+        let columns = board.columns.len();
         self.model.ui.screens.retain(|screen| match screen {
             Screen::Conflict | Screen::ConfirmQuit => false,
             Screen::Detail { task, .. }
             | Screen::ConfirmDelete { task }
             | Screen::MoveTo { task, .. } => board.task(*task).is_some(),
+            Screen::ConfirmWip { task, column, .. } => {
+                board.task(*task).is_some() && *column < columns
+            }
+            // Screens about a column may now be about a different one.
+            Screen::Prompt { .. } | Screen::DeleteColumn { .. } | Screen::Colors { .. } => false,
             _ => true,
         });
         self.model.reconcile_selection();
@@ -310,6 +335,41 @@ impl Updater<'_> {
             }
             CommandId::MoveTaskLeft => self.move_task_sideways(-1),
             CommandId::MoveTaskRight => self.move_task_sideways(1),
+            CommandId::AddColumn => self.open_prompt(PromptKind::AddColumn {
+                at: (self.model.ui.active_column + 1).min(self.model.board.columns.len()),
+            }),
+            CommandId::RenameColumn => {
+                if self.model.ui.active_column < self.model.board.columns.len() {
+                    self.open_prompt(PromptKind::RenameColumn {
+                        column: self.model.ui.active_column,
+                    });
+                }
+            }
+            CommandId::WipLimit => {
+                if self.model.ui.active_column < self.model.board.columns.len() {
+                    self.open_prompt(PromptKind::WipLimit {
+                        column: self.model.ui.active_column,
+                    });
+                }
+            }
+            CommandId::PromptSave => self.submit_prompt(),
+            CommandId::PromptCancel => self.pop(),
+            CommandId::DeleteColumn => self.open_delete_column(),
+            CommandId::TasksToPrevious => self.step_tasks_to(-1),
+            CommandId::TasksToNext => self.step_tasks_to(1),
+            CommandId::ConfirmDeleteColumn => self.delete_column(),
+            CommandId::CancelDeleteColumn => self.pop(),
+            CommandId::MoveColumnUp => self.move_active_column(-1),
+            CommandId::MoveColumnDown => self.move_active_column(1),
+            CommandId::ColumnColor => self.open_colors(),
+            CommandId::PickColor => self.pick_color(),
+            CommandId::ToggleCollapse => self.toggle_collapse(),
+            CommandId::MoveAnyway => self.confirm_wip_move(),
+            CommandId::SwitchBoard => self.effects.push(Effect::ListBoards),
+            CommandId::OpenBoard => self.open_selected_board(),
+            CommandId::CreateHere => self.create_here(),
+            CommandId::OpenPersonal => self.open_personal(),
+            CommandId::CancelMove => self.pop(),
             CommandId::Undo => self.undo(),
             CommandId::Redo => self.redo(),
             CommandId::Search => {
@@ -425,6 +485,11 @@ impl Updater<'_> {
                 Some(Screen::QuickAdd { input, .. }) => {
                     input.handle_key(key);
                 }
+                Some(Screen::Prompt { input, error, .. }) => {
+                    if input.handle_key(key) {
+                        *error = None;
+                    }
+                }
                 Some(Screen::Palette(palette)) => {
                     if palette.input.handle_key(key) {
                         palette.selected = 0;
@@ -476,6 +541,12 @@ impl Updater<'_> {
                     self.model.ui.search = Default::default();
                 }
                 self.model.ui.focus = FocusRegion::Cards;
+                // Expand a collapsed lane to show the task.
+                if let Some((column, _)) = self.model.board.task_location(id)
+                    && self.model.lane_hidden(column)
+                {
+                    self.set_collapsed(column, false);
+                }
                 self.model.select_task(id);
                 self.model.reconcile_selection();
                 // From the drawer, show the task there.
@@ -565,7 +636,7 @@ impl Updater<'_> {
                 let label = format!("edit '{title}'");
                 match self.change(label, |board, now| board.update_task(id, title, text, now)) {
                     Ok(()) => self.toast(
-                        "Description saved · u to undo",
+                        crate::command::with_undo_hint("Description saved"),
                         ToastKind::Success,
                         Duration::from_secs(3),
                     ),
@@ -627,7 +698,7 @@ impl Updater<'_> {
                     editor.error = None;
                 }
             }
-            Some(Screen::QuickAdd { input, .. }) => {
+            Some(Screen::QuickAdd { input, .. }) | Some(Screen::Prompt { input, .. }) => {
                 input.insert_str(&text.replace(['\n', '\r'], " "));
             }
             Some(Screen::Palette(palette)) => {
@@ -830,11 +901,17 @@ impl Updater<'_> {
             Some(_) => format!("edit '{title}'"),
             None => format!("add '{title}'"),
         };
+        let expand = self.model.lane_hidden(placement.column);
         let result = match task_id {
             Some(id) => self.change(label, |board, now| {
                 board.update_task(id, title, description, now).map(|_| id)
             }),
             None => self.change(label, |board, now| {
+                // A task added to a collapsed lane expands it, so the new
+                // card can be seen.
+                if expand {
+                    board.set_collapsed(placement.column, false)?;
+                }
                 let anchor = placement.anchor.and_then(|id| board.task_location(id));
                 let index = match anchor {
                     Some((column, index)) if column == placement.column => {
@@ -893,7 +970,7 @@ impl Updater<'_> {
         self.model.ui.selected = neighbour;
         self.model.reconcile_selection();
         self.toast(
-            "Task deleted · u to undo",
+            crate::command::with_undo_hint("Task deleted"),
             ToastKind::Info,
             Duration::from_secs(5),
         );
@@ -912,7 +989,13 @@ impl Updater<'_> {
             return;
         }
         let label = format!("add '{title}'");
-        match self.change(label, |board, now| board.add_task(column, title, "", now)) {
+        let expand = self.model.lane_hidden(column);
+        match self.change(label, |board, now| {
+            if expand {
+                board.set_collapsed(column, false)?;
+            }
+            board.add_task(column, title, "", now)
+        }) {
             Ok(id) => {
                 if let Some(Screen::QuickAdd { input, .. }) = self.model.ui.screens.last_mut() {
                     *input = TextInput::new("");
@@ -945,7 +1028,7 @@ impl Updater<'_> {
                 self.model.select_task(copy);
                 self.model.reconcile_selection();
                 self.toast(
-                    "Task duplicated · u to undo",
+                    crate::command::with_undo_hint("Task duplicated"),
                     ToastKind::Info,
                     Duration::from_secs(3),
                 );
@@ -957,10 +1040,22 @@ impl Updater<'_> {
 
     fn move_menu(&mut self, direction: isize) {
         let columns = self.model.board.columns.len();
-        if let Some(Screen::MoveTo { selected, .. }) = self.model.ui.screens.last_mut() {
-            *selected = selected
-                .saturating_add_signed(direction)
-                .min(columns.saturating_sub(1));
+        let colors = self.model.ui.theme.accent_names().len() + 1;
+        match self.model.ui.screens.last_mut() {
+            Some(Screen::MoveTo { selected, .. }) => {
+                *selected = selected
+                    .saturating_add_signed(direction)
+                    .min(columns.saturating_sub(1));
+            }
+            Some(Screen::Colors { selected, .. }) => {
+                *selected = selected.saturating_add_signed(direction).min(colors - 1);
+            }
+            Some(Screen::Boards { entries, selected }) => {
+                *selected = selected
+                    .saturating_add_signed(direction)
+                    .min(entries.len().saturating_sub(1));
+            }
+            _ => {}
         }
     }
 
@@ -974,7 +1069,7 @@ impl Updater<'_> {
         }
         self.pop();
         if self.model.board.task_location(task).map(|(from, _)| from) != Some(column) {
-            self.move_task_to(task, column);
+            self.request_move(task, column, None);
         }
     }
 
@@ -1064,18 +1159,19 @@ impl Updater<'_> {
             return;
         };
         if target < self.model.board.columns.len() {
-            self.move_task_to(id, target);
+            self.request_move(id, target, None);
         }
     }
 
-    /// Moves a task to the end of another column.
-    fn move_task_to(&mut self, id: Uuid, target: usize) {
+    /// Moves a task to `index` in a column (as for `Board::move_task`), or
+    /// to its end.
+    fn move_task_to(&mut self, id: Uuid, target: usize, index: Option<usize>) {
         let label = format!(
             "move '{}' → {}",
             self.task_title(id),
             self.column_name(target)
         );
-        match self.change(label, |board, now| board.move_task(id, target, None, now)) {
+        match self.change(label, |board, now| board.move_task(id, target, index, now)) {
             Ok(outcome) => {
                 self.model.select_task(outcome.task_id);
                 self.model.reconcile_selection();

@@ -9,6 +9,7 @@ mod detail;
 mod editor;
 mod geometry;
 mod help;
+mod hit;
 mod lanes;
 mod menu;
 mod palette;
@@ -19,10 +20,11 @@ mod text;
 mod which_key;
 
 pub(crate) use geometry::{all_tasks_rows, reveal_detail_item, sync_scroll};
+pub(crate) use hit::{drop_target, hit, lane_range};
 pub use which_key::DELAY as WHICH_KEY_DELAY;
 
 use crate::animation::{AnimationKind, ease_out_cubic};
-use crate::app::{Model, Screen, ViewMode};
+use crate::app::{Marker, Model, Screen, ViewMode};
 use crate::clock::Clock;
 use crate::layout;
 use ratatui::Frame;
@@ -52,6 +54,7 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
         ViewMode::Board => lanes::render(frame, &page, model, clock),
         ViewMode::AllTasks => all_tasks::render(frame, page.main, model, clock),
     }
+    render_drop_marker(frame, model);
     if let Some(tip) = page.tip {
         bars::render_tip(frame, tip, model);
     }
@@ -82,6 +85,47 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
             }
             Screen::QuickAdd { column, input } => {
                 prompt::render(frame, area, model, *column, input, clock)
+            }
+            Screen::Prompt { kind, input, error } => {
+                prompt::render_column(frame, area, model, *kind, input, error.as_deref(), clock)
+            }
+            Screen::DeleteColumn { column, tasks_to } => {
+                confirm::render_delete_column(frame, area, model, *column, *tasks_to, clock)
+            }
+            Screen::Colors { column, selected } => {
+                menu::render_colors(frame, area, model, *column, *selected, clock)
+            }
+            Screen::Boards { entries, selected } => {
+                menu::render_boards(frame, area, model, entries, *selected, clock)
+            }
+            Screen::NoBoard { directory, .. } => {
+                confirm::render_no_board(frame, area, model, directory, clock)
+            }
+            Screen::ConfirmWip { column, .. } => {
+                confirm::render_wip(frame, area, model, *column, clock)
+            }
+        }
+    }
+}
+
+/// Where a dragged card would land: a line between cards, or a bar beside
+/// one.
+fn render_drop_marker(frame: &mut Frame<'_>, model: &Model) {
+    let Some(target) = model.ui.mouse.drag.and_then(|drag| drag.target) else {
+        return;
+    };
+    let style = fg(model.ui.theme.accent).add_modifier(Modifier::BOLD);
+    match target.marker {
+        Marker::Line(area) => put(
+            frame,
+            area.x,
+            area.y,
+            area.width,
+            Line::from(Span::styled("━".repeat(area.width as usize), style)),
+        ),
+        Marker::Bar(area) => {
+            for y in area.top()..area.bottom() {
+                put(frame, area.x, y, 1, Line::from(Span::styled("▌", style)));
             }
         }
     }

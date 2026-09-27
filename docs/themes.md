@@ -1,6 +1,7 @@
 # Themes
 
-Pick a theme with `--theme`:
+Pick a theme with `--theme`, or with `theme = "…"` in the config file
+(see [design.md](design.md#the-config-file)):
 
 | Theme | |
 |---|---|

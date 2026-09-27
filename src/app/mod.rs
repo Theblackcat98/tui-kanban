@@ -14,6 +14,7 @@ mod editor;
 mod history;
 mod input;
 mod model;
+mod mouse;
 mod palette;
 mod persist;
 mod update;
@@ -23,9 +24,10 @@ pub use editor::{EditorField, EditorState, Placement};
 pub use history::History;
 pub use input::TextInput;
 pub use model::{
-    FocusRegion, Model, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind, Ui, ViewMode,
-    VisibleTask,
+    BoardEntry, FocusRegion, Model, PromptKind, SaveState, Screen, Scroll, Search, Session, Toast,
+    ToastKind, Ui, ViewMode, VisibleTask,
 };
+pub use mouse::{DOUBLE_CLICK, Drag, DropTarget, Hit, Marker, Mouse};
 pub use palette::{
     Entry as PaletteEntry, Palette, Target as PaletteTarget, entries as palette_entries,
 };
@@ -36,7 +38,8 @@ use anyhow::{Context as _, Result, bail};
 use clap::Parser;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
-    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEvent,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyEvent, MouseEventKind,
 };
 use ratatui::crossterm::execute;
 use std::collections::VecDeque;
@@ -45,7 +48,12 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::boards::{self, Named, Recent};
 use crate::clock::Clock;
+use crate::command;
+use crate::config::{self, Config, DEFAULT_COLUMNS, DateFormat};
+use crate::domain::Board;
+use crate::paths;
 use crate::storage::JsonStore;
 use crate::theme::{self, Theme, reduce_motion};
 use crate::ui;
@@ -55,10 +63,18 @@ use persist::Persistence;
 const IDLE_REFRESH: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Parser)]
-#[command(name = "tui-kanban", about = "A beautiful terminal Kanban board")]
+#[command(
+    name = "tui-kanban",
+    about = "A beautiful terminal Kanban board",
+    version
+)]
 pub struct Cli {
-    #[arg(long, default_value = ".tui-kanban.json")]
-    pub board: PathBuf,
+    /// The board to open: a path to a board file, or a name, which opens
+    /// the recent board with that name or a personal board of that name
+    /// in ~/.local/share/tui-kanban/boards. Without it, the nearest
+    /// .tui-kanban.json in this directory or above, up to the git root.
+    #[arg(long, value_name = "PATH OR NAME")]
+    pub board: Option<String>,
     /// The colour theme: auto (Latte on light terminals, Mocha on dark
     /// ones), latte, frappe, macchiato, mocha, ansi, the name of a theme in
     /// ~/.config/tui-kanban/themes, or a path to a .toml theme file.
@@ -67,6 +83,61 @@ pub struct Cli {
     /// Turn off animations (a non-empty REDUCE_MOTION does the same).
     #[arg(long)]
     pub no_animation: bool,
+    /// Leave the mouse to the terminal, so text can be selected as usual.
+    #[arg(long)]
+    pub no_mouse: bool,
+    #[command(subcommand)]
+    pub command: Option<Subcommand>,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum Subcommand {
+    /// Where the config file is, or a commented one with every default.
+    Config {
+        /// Print a config file with every setting at its default, to
+        /// start from: tui-kanban config --print-default > <path>
+        #[arg(long)]
+        print_default: bool,
+    },
+}
+
+/// How the app looks and behaves, from the config file and the command
+/// line.
+#[derive(Clone, Debug)]
+pub struct Settings {
+    pub theme: Theme,
+    pub animations: bool,
+    pub date_format: DateFormat,
+    /// The columns of a new board.
+    pub columns: Vec<String>,
+    /// Whether a new board is named after where it is (its directory, or
+    /// its file), rather than "Project Board".
+    pub name_new_boards: bool,
+}
+
+impl Settings {
+    pub fn new(theme: Theme, animations: bool) -> Self {
+        Self {
+            theme,
+            animations,
+            date_format: DateFormat::default(),
+            columns: DEFAULT_COLUMNS.map(str::to_owned).to_vec(),
+            name_new_boards: false,
+        }
+    }
+
+    /// The board to start with where there is no file at `path` yet.
+    pub fn new_board(&self, path: &std::path::Path) -> Board {
+        let mut board = if self.columns == DEFAULT_COLUMNS {
+            Board::default()
+        } else {
+            Board::with_columns("", &self.columns)
+        };
+        if self.name_new_boards || board.name.is_empty() {
+            board.name = boards::default_name(path);
+        }
+        board
+    }
 }
 
 /// The runtime: the model plus where it is saved. It turns events into
@@ -82,21 +153,70 @@ pub struct App {
     quit: bool,
     /// Whether the user chose to quit without saving.
     discarded: bool,
+    settings: Settings,
+    /// The recently opened boards, for the switcher.
+    recent: Option<Recent>,
+    /// The personal board, which the switcher always offers.
+    personal: Option<PathBuf>,
+    /// Whether to watch boards for changes by other programs.
+    watching: bool,
 }
 
 impl App {
     pub fn new(store: JsonStore, theme: Theme, animations_enabled: bool) -> Result<Self> {
+        Self::with_settings(store, Settings::new(theme, animations_enabled))
+    }
+
+    pub fn with_settings(store: JsonStore, settings: Settings) -> Result<Self> {
         let path = store.path().to_owned();
-        let (persistence, board) = Persistence::open(store)
+        let new_board = settings.new_board(&path);
+        let (persistence, board) = Persistence::open(store, new_board)
             .with_context(|| format!("could not load {}", path.display()))?;
+        let mut model = Model::new(board, settings.theme.clone(), settings.animations);
+        model.ui.date_format = settings.date_format.clone();
         Ok(Self {
-            model: Model::new(board, theme, animations_enabled),
+            model,
             persistence,
             tip_marker: None,
             external_edit: None,
             quit: false,
             discarded: false,
+            settings,
+            recent: None,
+            personal: None,
+            watching: false,
         })
+    }
+
+    /// Remembers opened boards in `recent`, and offers them and the
+    /// personal board (at `personal`) in the board switcher.
+    pub fn with_boards(mut self, recent: Option<Recent>, personal: Option<PathBuf>) -> Self {
+        self.recent = recent;
+        self.personal = personal;
+        self
+    }
+
+    /// Asks where to put the board, when none was found where tui-kanban
+    /// started: here, or the personal board.
+    pub fn ask_for_board(mut self) -> Self {
+        let directory = self
+            .store()
+            .path()
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map_or_else(|| ".".to_owned(), tidy_path);
+        self.model.ui.screens.push(Screen::NoBoard {
+            directory,
+            personal: self.personal.clone(),
+        });
+        self
+    }
+
+    /// Adds the open board to the recent boards.
+    pub fn remember_board(&self) {
+        if let Some(recent) = &self.recent {
+            recent.record(self.store().path());
+        }
     }
 
     pub fn store(&self) -> &JsonStore {
@@ -106,6 +226,7 @@ impl App {
     /// Watches the board file, loading changes other programs make.
     pub fn watch_board(mut self) -> Self {
         self.persistence.watch();
+        self.watching = true;
         self
     }
 
@@ -184,6 +305,13 @@ impl App {
                     Effect::EditExternally { text, target } => {
                         self.external_edit = Some((text, target));
                     }
+                    Effect::ListBoards => queue.push_back(Action::ShowBoards(self.board_entries())),
+                    Effect::SwitchBoard(path) => {
+                        queue.extend(self.persistence.flush(&self.model, clock.instant));
+                        queue.push_back(Action::SwitchReady(path));
+                    }
+                    Effect::LoadBoard(path) => queue.push_back(self.load_board(path)),
+                    Effect::RememberBoard => self.remember_board(),
                     Effect::DismissTip => {
                         // Best effort: if this fails the tip shows again
                         // next time, which is harmless.
@@ -197,6 +325,69 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Opens the board at `path` in place of this one. The caller has
+    /// saved this one first.
+    fn load_board(&mut self, path: PathBuf) -> Action {
+        let new_board = self.settings.new_board(&path);
+        match Persistence::open(JsonStore::new(&path), new_board) {
+            Ok((mut persistence, board)) => {
+                if self.watching {
+                    persistence.watch();
+                }
+                self.persistence = persistence;
+                self.remember_board();
+                Action::BoardOpened(board)
+            }
+            Err(error) => Action::OpenBoardFailed(error.to_string()),
+        }
+    }
+
+    /// The boards the switcher offers: this one, the recent ones that
+    /// still exist, and the personal board.
+    pub fn board_entries(&self) -> Vec<BoardEntry> {
+        let current = boards::absolute(self.store().path());
+        let mut paths = vec![current.clone()];
+        let recent = self.recent.as_ref().map(Recent::load).unwrap_or_default();
+        for path in recent {
+            if !paths.contains(&path) && path.is_file() {
+                paths.push(path);
+            }
+        }
+        if let Some(personal) = &self.personal
+            && !paths.contains(&boards::absolute(personal))
+        {
+            paths.push(personal.clone());
+        }
+        paths
+            .into_iter()
+            .map(|path| {
+                let is_current = path == current;
+                let (name, tasks) = if is_current {
+                    (
+                        self.model.board.name.clone(),
+                        Some(self.model.board.task_count()),
+                    )
+                } else {
+                    match boards::summary(&path) {
+                        Some(summary) => (summary.name, Some(summary.tasks)),
+                        None => (boards::default_name(&path), None),
+                    }
+                };
+                let count = match tasks {
+                    Some(1) => "1 task".to_owned(),
+                    Some(count) => format!("{count} tasks"),
+                    None => "new".to_owned(),
+                };
+                BoardEntry {
+                    detail: format!("{count} · {}", tidy_path(&path)),
+                    name,
+                    current: is_current,
+                    path,
+                }
+            })
+            .collect()
     }
 
     /// Text the runtime should open in `$EDITOR`, if any.
@@ -260,34 +451,111 @@ impl App {
     }
 }
 
+/// `path` with the home directory written as `~`.
+fn tidy_path(path: &std::path::Path) -> String {
+    match crate::paths::home_dir().and_then(|home| path.strip_prefix(home).ok()) {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_owned(),
+        Some(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
-    let store = JsonStore::new(cli.board);
-    let animations = !cli.no_animation && !reduce_motion(env::var_os("REDUCE_MOTION").as_deref());
+    let config_path = paths::config_file();
+    if let Some(Subcommand::Config { print_default }) = cli.command {
+        if print_default {
+            print!("{}", config::default_file());
+        } else {
+            match &config_path {
+                Some(path) if path.exists() => println!("{}", path.display()),
+                Some(path) => println!(
+                    "{} (not created yet; tui-kanban config --print-default prints one)",
+                    path.display()
+                ),
+                None => println!("there is no config directory (set HOME or XDG_CONFIG_HOME)"),
+            }
+        }
+        return Ok(());
+    }
+    let config = match &config_path {
+        Some(path) => Config::load(path)?,
+        None => Config::default(),
+    };
+    command::install(config.command_table()?);
+
+    let animations = !cli.no_animation
+        && config.animations
+        && !reduce_motion(env::var_os("REDUCE_MOTION").as_deref());
     let theme = theme::resolve(
-        cli.theme.as_deref(),
+        cli.theme.as_deref().or(config.theme.as_deref()),
         &theme::Environment::from_env(),
         theme::detect_light_background,
     )?;
-    let mut app = App::new(store, theme, animations)?.watch_board();
-    if let Some(state) = crate::paths::state_dir() {
+    let settings = Settings {
+        date_format: config.date_format.clone(),
+        columns: config.columns.clone(),
+        name_new_boards: true,
+        ..Settings::new(theme, animations)
+    };
+    let state = paths::state_dir();
+    let recent = state
+        .as_ref()
+        .map(|state| Recent::new(state.join("recent-boards")));
+    let data = paths::data_dir();
+    let personal = data
+        .as_ref()
+        .map(|data| boards::named(data, boards::PERSONAL));
+
+    let (path, found) = match cli.board.as_deref().map(Named::parse) {
+        Some(Named::Path(path)) => (path, true),
+        Some(Named::Name(name)) => {
+            let recent_boards = recent.as_ref().map(Recent::load).unwrap_or_default();
+            let path = boards::resolve_name(&name, &recent_boards, data.as_deref()).with_context(
+                || format!("there is no data directory for a board called {name}; give a path"),
+            )?;
+            (path, true)
+        }
+        None => {
+            let here = env::current_dir().context("could not read the current directory")?;
+            match boards::find_upward(&here, paths::home_dir().as_deref()) {
+                Some(path) => (path, true),
+                None => (here.join(boards::FILE_NAME), false),
+            }
+        }
+    };
+    let mut app = App::with_settings(JsonStore::new(path), settings)?
+        .watch_board()
+        .with_boards(recent, personal);
+    if found {
+        app.remember_board();
+    } else {
+        app = app.ask_for_board();
+    }
+    if let Some(state) = state {
         app = app.with_tip_marker(state.join("tip-dismissed"));
     }
-    let mut terminal = init_terminal()?;
+    let mouse = !cli.no_mouse && config.mouse;
+    let mut terminal = init_terminal(mouse)?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);
     }
-    let result = run_loop(&mut terminal, &mut app);
+    let result = run_loop(&mut terminal, &mut app, mouse);
     let restore_result = restore_terminal();
     result.and(restore_result).and(app.finish())
 }
 
 /// Enters the alternate screen and raw mode, with bracketed paste so a
-/// multi-line paste arrives as one piece of text rather than as keys.
-fn init_terminal() -> Result<DefaultTerminal> {
+/// multi-line paste arrives as one piece of text rather than as keys, and
+/// with mouse capture unless `mouse` is off. Capturing the mouse stops the
+/// terminal selecting text, except with Shift held in most terminals.
+fn init_terminal(mouse: bool) -> Result<DefaultTerminal> {
     let terminal = ratatui::try_init().context("could not initialize terminal")?;
-    // Terminals without bracketed paste ignore the request.
+    // Terminals without bracketed paste or a mouse ignore the requests.
     let _ = execute!(io::stdout(), EnableBracketedPaste);
+    if mouse {
+        let _ = execute!(io::stdout(), EnableMouseCapture);
+    }
     Ok(terminal)
 }
 
@@ -296,20 +564,21 @@ fn init_terminal() -> Result<DefaultTerminal> {
 fn edit_externally(
     terminal: &mut DefaultTerminal,
     text: &str,
+    mouse: bool,
 ) -> Result<std::result::Result<String, String>> {
     restore_terminal()?;
     let result = crate::tui::external::edit(text);
-    *terminal = init_terminal()?;
+    *terminal = init_terminal(mouse)?;
     terminal.clear()?;
     Ok(result)
 }
 
 fn restore_terminal() -> Result<()> {
-    let _ = execute!(io::stdout(), DisableBracketedPaste);
+    let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::try_restore().context("could not restore terminal")
 }
 
-fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+fn run_loop(terminal: &mut DefaultTerminal, app: &mut App, mouse: bool) -> Result<()> {
     let mut needs_redraw = true;
     loop {
         // Tick on every iteration, not only when polling times out, so
@@ -330,17 +599,15 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             match event::read()? {
                 Event::Key(key) => {
                     app.handle_key(key, Clock::now());
-                    if let Some((text, target)) = app.take_external_edit() {
-                        let result = edit_externally(terminal, &text)?;
-                        app.dispatch(
-                            Action::ExternalEditFinished { target, result },
-                            Clock::now(),
-                        );
-                    }
                     needs_redraw = true;
                 }
                 Event::Paste(text) => {
                     app.dispatch(Action::Paste(text), Clock::now());
+                    needs_redraw = true;
+                }
+                // Plain pointer movement changes nothing on screen.
+                Event::Mouse(event) if event.kind != MouseEventKind::Moved => {
+                    app.dispatch(Action::Mouse(event), Clock::now());
                     needs_redraw = true;
                 }
                 Event::Resize(width, height) => {
@@ -348,6 +615,14 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
                     needs_redraw = true;
                 }
                 _ => {}
+            }
+            // A key, or a click on a hint, can ask for $EDITOR.
+            if let Some((text, target)) = app.take_external_edit() {
+                let result = edit_externally(terminal, &text, mouse)?;
+                app.dispatch(
+                    Action::ExternalEditFinished { target, result },
+                    Clock::now(),
+                );
             }
         } else {
             // An animation frame is due, a toast expired, a save finished,
@@ -362,7 +637,7 @@ mod tests {
     use super::*;
     use crate::animation::{AnimationKind, FRAME_INTERVAL};
     use crate::domain::Board;
-    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
     use tempfile::TempDir;
     use uuid::Uuid;
 
@@ -1588,6 +1863,587 @@ mod tests {
         app.handle_key(key(KeyCode::Char('g')), clock);
         let timeout = app.next_timeout(clock.instant);
         assert!(timeout <= crate::ui::WHICH_KEY_DELAY && timeout > Duration::ZERO);
+    }
+
+    fn column_names(app: &App) -> Vec<&str> {
+        app.model
+            .board
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn columns_are_managed_from_the_rail() {
+        let (_directory, mut app) = test_app();
+        // a adds a column after the active one, and focuses it.
+        press(&mut app, &[KeyCode::Tab, KeyCode::Char('a')]);
+        type_text(&mut app, "Review");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(
+            column_names(&app),
+            ["Backlog", "Review", "In Progress", "Done"]
+        );
+        assert_eq!(app.model.ui.active_column, 1);
+        assert_eq!(app.model.ui.focus, FocusRegion::Rail);
+        // An empty name is refused, and the prompt stays open.
+        press(&mut app, &[KeyCode::Char('a'), KeyCode::Enter]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Prompt { error: Some(_), .. })
+        ));
+        press(&mut app, &[KeyCode::Esc]);
+        // r renames, keeping the id.
+        press(&mut app, &[KeyCode::Char('r')]);
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        type_text(&mut app, "Code review");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[1].name, "Code review");
+        assert_eq!(app.model.board.columns[1].id, "review");
+        // J and K reorder, and the column stays active.
+        press(&mut app, &[KeyCode::Char('J')]);
+        assert_eq!(
+            column_names(&app),
+            ["Backlog", "In Progress", "Code review", "Done"]
+        );
+        assert_eq!(app.model.ui.active_column, 2);
+        press(&mut app, &[KeyCode::Char('K'), KeyCode::Char('K')]);
+        assert_eq!(column_names(&app)[0], "Code review");
+        // Every change can be undone.
+        press(&mut app, &[KeyCode::Char('u'), KeyCode::Char('u')]);
+        assert_eq!(column_names(&app)[2], "Code review");
+        app.flush(clock());
+        assert_eq!(app.store().load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn deleting_a_column_moves_its_tasks_or_deletes_them() {
+        let (_directory, mut app) = test_app();
+        let task = add(&mut app, 1, "In flight");
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('d')],
+        );
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::DeleteColumn {
+                column: 1,
+                tasks_to: Some(0)
+            })
+        ));
+        // l steps to the next column, then to deleting the tasks, then
+        // wraps around.
+        press(&mut app, &[KeyCode::Char('l')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::DeleteColumn {
+                tasks_to: Some(2),
+                ..
+            })
+        ));
+        press(&mut app, &[KeyCode::Char('l')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::DeleteColumn { tasks_to: None, .. })
+        ));
+        press(&mut app, &[KeyCode::Char('h'), KeyCode::Char('y')]);
+        assert_eq!(column_names(&app), ["Backlog", "Done"]);
+        assert_eq!(app.model.board.task_location(task), Some((1, 0)));
+        assert_eq!(app.model.ui.active_column, 1);
+        assert_eq!(
+            toast_message(&app),
+            "Deleted In Progress, its tasks moved to Done · u to undo"
+        );
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(column_names(&app), ["Backlog", "In Progress", "Done"]);
+        assert_eq!(app.model.board.task_location(task), Some((1, 0)));
+        // The last column can't be deleted.
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('l')]);
+        press(&mut app, &[KeyCode::Char('l'), KeyCode::Char('y')]);
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('y')]);
+        assert_eq!(app.model.board.columns.len(), 1);
+        assert!(app.model.board.task(task).is_none());
+        press(&mut app, &[KeyCode::Char('d')]);
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn a_column_colour_can_be_picked_or_left_automatic() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Tab, KeyCode::Char('c')]);
+        let names = app.model.ui.theme.accent_names();
+        // The current colour, sapphire, is highlighted.
+        let sapphire = names.iter().position(|name| *name == "sapphire").unwrap();
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Colors { selected, .. }) if *selected == sapphire + 1
+        ));
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Enter]);
+        assert_eq!(
+            app.model.board.columns[0].color.as_deref(),
+            Some(names[sapphire + 1])
+        );
+        press(&mut app, &[KeyCode::Char('c'), KeyCode::Home]);
+        // Home isn't a menu key; go to the top with k instead.
+        press(&mut app, &[KeyCode::Char('k'); 20]);
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[0].color, None);
+    }
+
+    #[test]
+    fn a_full_column_asks_before_taking_another_task() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "First");
+        let second = add(&mut app, 0, "Second");
+        add(&mut app, 1, "Busy");
+        // w sets a limit of 1 on In Progress, which is now full.
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('w')],
+        );
+        type_text(&mut app, "x");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Prompt { error: Some(_), .. })
+        ));
+        press(&mut app, &[KeyCode::Backspace]);
+        type_text(&mut app, "1");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[1].wip_limit, Some(1));
+        // Moving a task in asks; n leaves it where it was.
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('h'), KeyCode::Char('L')],
+        );
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmWip { .. })));
+        press(&mut app, &[KeyCode::Char('n')]);
+        assert_eq!(app.model.board.task_location(first), Some((0, 0)));
+        // y moves it anyway.
+        press(&mut app, &[KeyCode::Char('L'), KeyCode::Char('y')]);
+        assert_eq!(app.model.board.task_location(first), Some((1, 1)));
+        assert_eq!(app.model.board.columns[1].wip(), crate::domain::Wip::Over);
+        // So does the move-to menu.
+        press(
+            &mut app,
+            &[KeyCode::Char('h'), KeyCode::Char('m'), KeyCode::Char('2')],
+        );
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmWip { .. })));
+        press(&mut app, &[KeyCode::Esc]);
+        assert_eq!(app.model.board.task_location(second), Some((0, 0)));
+        // An empty answer removes the limit.
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('w')],
+        );
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[1].wip_limit, None);
+    }
+
+    #[test]
+    fn a_collapsed_lane_hides_its_cards_in_the_board_view() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Todo");
+        let done = add(&mut app, 2, "Shipped");
+        press(&mut app, &[KeyCode::Char('3')]);
+        assert_eq!(app.model.selected_task_id(), Some(done));
+        press(&mut app, &[KeyCode::Char('z')]);
+        assert!(app.model.board.columns[2].collapsed);
+        assert_eq!(app.model.selected_task_id(), None);
+        assert_eq!(app.model.ui.active_column, 2);
+        // Its tasks don't match searches, and h / l still reach it.
+        press(&mut app, &[KeyCode::Char('h'), KeyCode::Char('l')]);
+        assert_eq!(app.model.ui.active_column, 2);
+        assert!(app.model.visible_task_indices(2).is_empty());
+        // All tasks shows every column.
+        press(&mut app, &[KeyCode::Char('v')]);
+        assert_eq!(app.model.visible_task_indices(2), vec![0]);
+        press(&mut app, &[KeyCode::Char('v')]);
+        // Adding a task to it expands it, as one change.
+        press(&mut app, &[KeyCode::Char('a')]);
+        type_text(&mut app, "More");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Esc]);
+        assert!(!app.model.board.columns[2].collapsed);
+        assert_eq!(titles(&app, 2), ["Shipped", "More"]);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert!(app.model.board.columns[2].collapsed);
+        assert_eq!(titles(&app, 2), ["Shipped"]);
+        // Going to one of its tasks from the palette expands it.
+        press(&mut app, &[KeyCode::Char('1'), KeyCode::Char(':')]);
+        type_text(&mut app, "shipped");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(!app.model.board.columns[2].collapsed);
+        assert_eq!(app.model.selected_task_id(), Some(done));
+    }
+
+    /// Where `text` is on screen, rendering the app as it is now: its
+    /// first appearance from the top.
+    fn find(app: &App, text: &str) -> (u16, u16) {
+        find_from(app, text, false)
+    }
+
+    /// The last appearance of `text`, from the bottom, as in the status
+    /// line.
+    fn find_last(app: &App, text: &str) -> (u16, u16) {
+        find_from(app, text, true)
+    }
+
+    fn find_from(app: &App, text: &str, from_bottom: bool) -> (u16, u16) {
+        let (width, height) = app.model.ui.viewport;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| ui::render(frame, &app.model, clock()))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<u16> = if from_bottom {
+            (0..height).rev().collect()
+        } else {
+            (0..height).collect()
+        };
+        for y in rows {
+            let row: Vec<&str> = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
+            let line: String = row.concat();
+            if let Some(byte) = line.find(text) {
+                return (line[..byte].chars().count() as u16, y);
+            }
+        }
+        panic!("{text:?} is not on screen");
+    }
+
+    fn mouse(app: &mut App, kind: MouseEventKind, (x, y): (u16, u16), clock: Clock) {
+        use ratatui::crossterm::event::MouseEvent;
+        app.dispatch(
+            Action::Mouse(MouseEvent {
+                kind,
+                column: x,
+                row: y,
+                modifiers: KeyModifiers::NONE,
+            }),
+            clock,
+        );
+    }
+
+    fn click(app: &mut App, at: (u16, u16)) {
+        use ratatui::crossterm::event::MouseButton;
+        mouse(app, MouseEventKind::Down(MouseButton::Left), at, clock());
+        mouse(app, MouseEventKind::Up(MouseButton::Left), at, clock());
+    }
+
+    fn drag(app: &mut App, from: (u16, u16), to: (u16, u16)) {
+        use ratatui::crossterm::event::MouseButton;
+        mouse(app, MouseEventKind::Down(MouseButton::Left), from, clock());
+        mouse(app, MouseEventKind::Drag(MouseButton::Left), to, clock());
+        mouse(app, MouseEventKind::Up(MouseButton::Left), to, clock());
+    }
+
+    #[test]
+    fn clicks_select_focus_and_open() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "First");
+        let second = add(&mut app, 1, "Second card");
+        let at = find(&app, "Second card");
+        click(&mut app, at);
+        assert_eq!(app.model.selected_task_id(), Some(second));
+        assert_eq!(app.model.ui.active_column, 1);
+        assert!(app.model.ui.screens.is_empty());
+        // A second click soon after is a double click, which opens it.
+        let at = find(&app, "Second card");
+        click(&mut app, at);
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { task, .. }) if *task == second));
+        // Clicking another card shows it in the drawer.
+        let first = app.model.board.columns[0].tasks[0].id;
+        let at = find(&app, "First");
+        click(&mut app, at);
+        assert!(matches!(top_screen(&app), Some(Screen::Detail { task, .. }) if *task == first));
+        press(&mut app, &[KeyCode::Esc]);
+        // A lane header focuses its lane, a rail entry the rail.
+        let at = find_last(&app, "Done");
+        click(&mut app, at);
+        assert_eq!(app.model.ui.active_column, 2);
+        assert_eq!(app.model.ui.focus, FocusRegion::Rail);
+        let header = find(&app, "In Progress  1");
+        click(&mut app, header);
+        assert_eq!(app.model.ui.active_column, 1);
+        assert_eq!(app.model.ui.focus, FocusRegion::Cards);
+        // The view names in the top bar switch views.
+        let at = find(&app, "All tasks");
+        click(&mut app, at);
+        assert_eq!(app.model.ui.view, ViewMode::AllTasks);
+    }
+
+    #[test]
+    fn clicking_a_hint_runs_it() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Task");
+        let at = find(&app, "n/N new");
+        click(&mut app, at);
+        assert!(matches!(top_screen(&app), Some(Screen::Editor(_))));
+        // Only the status line responds while an overlay is open.
+        let at = find_last(&app, "Esc cancel");
+        click(&mut app, at);
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn the_wheel_scrolls_lanes_and_the_drawer() {
+        let (_directory, mut app) = test_app();
+        app.resize(100, 20);
+        let tasks = add_many(&mut app, 10);
+        add_many_to(&mut app, 1, 10);
+        let lane = find(&app, "Task 0");
+        mouse(&mut app, MouseEventKind::ScrollDown, lane, clock());
+        assert_eq!(app.model.selected_task_id(), Some(tasks[1]));
+        // Another lane scrolls without taking the selection.
+        let other = find(&app, "Other 0");
+        mouse(&mut app, MouseEventKind::ScrollDown, other, clock());
+        assert_eq!(app.model.ui.scroll.lane(1), 1);
+        assert_eq!(app.model.selected_task_id(), Some(tasks[1]));
+        mouse(&mut app, MouseEventKind::ScrollUp, other, clock());
+        assert_eq!(app.model.ui.scroll.lane(1), 0);
+        // Over the drawer, it scrolls the description.
+        let long: String = (0..60).map(|line| format!("line {line}\n")).collect();
+        app.model
+            .board
+            .update_task(tasks[1], "Long".to_owned(), long, 0)
+            .unwrap();
+        press(&mut app, &[KeyCode::Enter]);
+        let text = find(&app, "line 0");
+        mouse(&mut app, MouseEventKind::ScrollDown, text, clock());
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Detail { scroll: 3, .. })
+        ));
+    }
+
+    fn add_many_to(app: &mut App, column: usize, count: usize) -> Vec<Uuid> {
+        (0..count)
+            .map(|index| {
+                let title = format!("Other {index}");
+                app.model.board.add_task(column, &title, "", 0).unwrap()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dragging_a_card_moves_it() {
+        let (_directory, mut app) = test_app();
+        let moving = add(&mut app, 0, "Moving");
+        add(&mut app, 1, "Top");
+        add(&mut app, 1, "Bottom");
+        // Onto the top half of "Bottom": between the two.
+        use ratatui::crossterm::event::MouseButton;
+        let from = find(&app, "Moving");
+        let to = find(&app, "Bottom");
+        mouse(
+            &mut app,
+            MouseEventKind::Down(MouseButton::Left),
+            from,
+            clock(),
+        );
+        mouse(
+            &mut app,
+            MouseEventKind::Drag(MouseButton::Left),
+            to,
+            clock(),
+        );
+        let marker = app.model.ui.mouse.drag.and_then(|drag| drag.target);
+        assert!(matches!(
+            marker,
+            Some(crate::app::DropTarget {
+                column: 1,
+                index: Some(1),
+                ..
+            })
+        ));
+        assert!(find(&app, "━━━━").1 == to.1 - 1);
+        mouse(&mut app, MouseEventKind::Up(MouseButton::Left), to, clock());
+        assert_eq!(titles(&app, 1), ["Top", "Moving", "Bottom"]);
+        assert_eq!(app.model.selected_task_id(), Some(moving));
+        assert!(app.model.ui.mouse.drag.is_none());
+        // Dropping it back on itself changes nothing, not even the undo
+        // history.
+        let here = find(&app, "Moving");
+        drag(&mut app, here, (here.0 + 1, here.1));
+        assert_eq!(titles(&app, 1), ["Top", "Moving", "Bottom"]);
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(titles(&app, 0), ["Moving"]);
+        // A rail entry drops at the end of its column.
+        let here = find(&app, "Moving");
+        let to = find_last(&app, "Done");
+        drag(&mut app, here, to);
+        assert_eq!(titles(&app, 2), ["Moving"]);
+    }
+
+    #[test]
+    fn dragging_into_a_full_column_asks() {
+        let (_directory, mut app) = test_app();
+        let moving = add(&mut app, 0, "Moving");
+        add(&mut app, 1, "Busy");
+        app.model.board.set_wip_limit(1, Some(1)).unwrap();
+        let from = find(&app, "Moving");
+        let to = find(&app, "Busy");
+        drag(&mut app, from, to);
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmWip { .. })));
+        press(&mut app, &[KeyCode::Char('y')]);
+        assert_eq!(app.model.board.task_location(moving), Some((1, 0)));
+    }
+
+    /// An app on `board.json` in a temporary directory, with recent boards
+    /// and a personal board there too.
+    fn app_with_boards() -> (TempDir, App) {
+        let directory = tempfile::tempdir().unwrap();
+        let store = JsonStore::new(directory.path().join("board.json"));
+        let recent = Recent::new(directory.path().join("state").join("recent-boards"));
+        let personal = boards::named(&directory.path().join("data"), boards::PERSONAL);
+        let mut app = App::new(store, Theme::mocha(), false)
+            .unwrap()
+            .with_boards(Some(recent), Some(personal));
+        app.resize(100, 30);
+        (directory, app)
+    }
+
+    #[test]
+    fn the_switcher_opens_another_board_after_saving_this_one() {
+        let (directory, mut app) = app_with_boards();
+        let other = directory.path().join("other.json");
+        let mut board = Board {
+            name: "Other".to_owned(),
+            ..Board::default()
+        };
+        board.add_task(0, "Theirs", "", 0).unwrap();
+        JsonStore::new(&other).save(&board).unwrap();
+        Recent::new(directory.path().join("state").join("recent-boards")).record(&other);
+
+        add(&mut app, 0, "Mine");
+        press(&mut app, &[KeyCode::Char('L'), KeyCode::Char('b')]);
+        let Some(Screen::Boards { entries, selected }) = top_screen(&app) else {
+            panic!("expected the switcher");
+        };
+        let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(names, ["Project Board", "Other", "Personal"]);
+        assert_eq!(*selected, 0);
+        assert!(entries[0].current);
+        assert!(entries[1].detail.starts_with("1 task · "));
+        assert!(entries[2].detail.starts_with("new · "));
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Enter]);
+        assert_eq!(app.model.board.name, "Other");
+        assert_eq!(app.store().path(), other);
+        assert!(app.model.ui.screens.is_empty());
+        assert!(!app.model.session.history.can_undo());
+        assert_eq!(toast_message(&app), "Opened Other");
+        // The board left behind was saved first.
+        let mine = JsonStore::new(directory.path().join("board.json"))
+            .load()
+            .unwrap()
+            .unwrap();
+        assert_eq!(mine.columns[1].tasks[0].title, "Mine");
+        // Opening a board makes it the most recent.
+        let recent = Recent::new(directory.path().join("state").join("recent-boards")).load();
+        assert_eq!(recent[0], boards::absolute(&other));
+        // Changes are saved to the new board.
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('y')]);
+        app.flush(clock());
+        assert_eq!(
+            JsonStore::new(&other).load().unwrap().unwrap().task_count(),
+            0
+        );
+    }
+
+    #[test]
+    fn the_switcher_stays_when_this_board_cannot_be_saved() {
+        let (directory, mut app) = app_with_boards();
+        std::fs::create_dir(directory.path().join("board.json")).unwrap();
+        add(&mut app, 0, "Unsaved");
+        press(
+            &mut app,
+            &[KeyCode::Char('L'), KeyCode::Char('b'), KeyCode::Char('j')],
+        );
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.name, "Project Board");
+        assert!(
+            toast_message(&app).starts_with("Can't switch boards"),
+            "{}",
+            toast_message(&app)
+        );
+    }
+
+    #[test]
+    fn with_no_board_found_it_asks_where_to_make_one() {
+        let (directory, app) = app_with_boards();
+        let mut app = app.ask_for_board();
+        assert!(matches!(top_screen(&app), Some(Screen::NoBoard { .. })));
+        // Nothing is written until the user decides.
+        app.flush(clock());
+        assert!(!directory.path().join("board.json").exists());
+        press(&mut app, &[KeyCode::Char('c')]);
+        assert!(app.model.ui.screens.is_empty());
+        app.flush(clock());
+        assert!(directory.path().join("board.json").exists());
+
+        // Or the personal board, which is new, so it starts empty.
+        let (directory, app) = app_with_boards();
+        let mut app = app.ask_for_board();
+        press(&mut app, &[KeyCode::Char('p')]);
+        let personal = boards::named(&directory.path().join("data"), boards::PERSONAL);
+        assert_eq!(app.store().path(), personal);
+        assert!(app.model.ui.screens.is_empty());
+        press(&mut app, &[KeyCode::Char('a')]);
+        type_text(&mut app, "First");
+        press(&mut app, &[KeyCode::Enter, KeyCode::Esc]);
+        app.flush(clock());
+        assert_eq!(
+            JsonStore::new(&personal)
+                .load()
+                .unwrap()
+                .unwrap()
+                .task_count(),
+            1
+        );
+        assert!(!directory.path().join("board.json").exists());
+
+        // q quits without creating anything.
+        let (directory, app) = app_with_boards();
+        let mut app = app.ask_for_board();
+        press(&mut app, &[KeyCode::Char('q')]);
+        assert!(app.should_quit());
+        assert!(!directory.path().join("board.json").exists());
+    }
+
+    #[test]
+    fn new_boards_follow_the_settings() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = directory.path().join("website");
+        std::fs::create_dir(&project).unwrap();
+        let settings = Settings {
+            columns: vec!["Ideas".to_owned(), "Doing".to_owned()],
+            name_new_boards: true,
+            date_format: DateFormat::Pattern("%Y-%m-%d".to_owned()),
+            ..Settings::new(Theme::mocha(), false)
+        };
+        let app =
+            App::with_settings(JsonStore::new(project.join(boards::FILE_NAME)), settings).unwrap();
+        assert_eq!(app.model.board.name, "website");
+        let names: Vec<&str> = app
+            .model
+            .board
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect();
+        assert_eq!(names, ["Ideas", "Doing"]);
+        assert_eq!(
+            app.model.ui.date_format,
+            DateFormat::Pattern("%Y-%m-%d".to_owned())
+        );
     }
 
     #[test]

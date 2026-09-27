@@ -13,11 +13,11 @@ expression: "harness.screen(60, 20)"
    │   g + letter          lane by its initial          │
  ▎ │   Tab / Shift+Tab     focus rail / cards           │
  ▎ │   v                   Board / All tasks            │
- ▎ │                                                    │
-   │ Tasks                                              │
+ ▎ │   b                   switch board                 │
+   │                                                    │
+ ▎ │ Tasks                                              │
  ▎ │   Enter               open details                 │
- ▎ │   n/N                 new task below / above       │
-   │   a                   quick add to this lane       │
+   │   n/N                 new task below / above       │
    │                                                    │
    │ ↓ more   j/k scroll   Esc close                    │
    ╰────────────────────────────────────────────────────╯

@@ -147,7 +147,10 @@ pub(crate) fn render(
         lines.push(highlighted(&description, &matched, muted(model), highlight));
     }
     let mut meta = vec![Span::styled(
-        format!("◷ {}", relative_time(task.updated_at, clock.wall_millis)),
+        format!(
+            "◷ {}",
+            relative_time(task.updated_at, clock.wall_millis, &model.ui.date_format)
+        ),
         faint(model),
     )];
     // Checklist progress, as "✓ 2/5", in `success` once all are done.

@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ Project Board   Board · All tasks
+
+  Columns              Backlog  0                In Progress  0            Done  0
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         0
+   In Progress     0   No tasks yet              No tasks yet              No tasks yet
+   Done            0   n to add one
+                       ? for all keys
+
+
+
+                   ╭ Welcome ───────────────────────────────────────────────────╮
+                   │                                                            │
+                   │  No board in ~/src/website                                 │
+                   │  Create one here, open your personal board, or q to quit.  │
+                   │                                                            │
+                   │  c create here   p personal board                          │
+                   │                                                            │
+                   ╰────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+ WELCOME   ● saved   c create here   p personal board

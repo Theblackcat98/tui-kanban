@@ -17,6 +17,8 @@ pub const RAIL_WIDTH: u16 = 22;
 /// The narrowest a lane gets; when fewer fit than there are columns, the
 /// lanes scroll sideways.
 pub const LANE_MIN_WIDTH: u16 = 24;
+/// A collapsed lane's width: a strip with its name written downwards.
+pub const COLLAPSED_LANE_WIDTH: u16 = 3;
 /// Cells between lanes, and between All tasks cards in a row.
 pub const LANE_GUTTER: u16 = 2;
 /// Cells on each side of the lane area.

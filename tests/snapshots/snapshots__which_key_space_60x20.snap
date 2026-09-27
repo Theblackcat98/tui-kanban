@@ -7,7 +7,6 @@ expression: "harness.screen(60, 20)"
  Backlog 3 · In Progress 2 · Done 2
  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
 
- ▌ Write the README
 ── Space ───────────────────────────────────── Esc cancel ──
   h/l         previous / next…   y       duplicate task
   j/k         next / previous…   m       move to…
@@ -15,7 +14,8 @@ expression: "harness.screen(60, 20)"
   Home/End    first / last ca…   d       delete task
   1–9         lane by its num…   H/L     move task left …
   g + letter  lane by its ini…   J/K     move task down …
-  v           Board / All tas…   /       search
+  v           Board / All tas…   z       collapse / expa…
+  b           switch board       /       search
   Enter       open details       ?       this help
   n/N         new task below …   :       command palette
   a           quick add to th…   q       quit

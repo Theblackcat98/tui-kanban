@@ -128,12 +128,22 @@ Backlog  3
 ```
 
 - Header: the name (bold; `text` when focused, `text_muted` otherwise)
-  and the task count in `text_faint` (`2/5` while filtering).
+  and the task count in `text_faint` (`2/5` while filtering). A column
+  with a work-in-progress limit counts against it (`3/4`); the count
+  turns `warning` at the limit and `danger` past it (bold, and bold
+  reversed, without colour). The rail and the tab strip colour their
+  counts the same way.
 - Underline: `▔` across the lane in the lane's accent, dimmed unless the
   lane is focused.
 - Cards scroll by whole cards, never partially. `↑ 2 more` / `↓ 3 more`
   show what is hidden. Each lane remembers its own scroll position.
 - Empty: `No tasks yet`, plus `n to add one` in the focused lane.
+- **Collapsed** (`z`): the lane is a three-cell strip with its count,
+  its underline and its name written downwards. Its cards are hidden in
+  the Board view, so they can't be selected or matched by a search; h/l
+  still stop on it, and `z` expands it again. All tasks shows every
+  column. Adding a task to a collapsed lane expands it. At the Compact
+  breakpoint a collapsed lane says `Collapsed · z to expand`.
 - At the Compact breakpoint the header is a tab strip instead:
   `‹ Backlog 3 · In Progress 2 · Done 5 ›`, with the active column in
   its lane colour and arrows when columns are off-screen.
@@ -146,8 +156,9 @@ Backlog  3
   its Markdown (`- [ ] tag` reads `☐ tag`), cut with `…`. Left out when
   empty.
 - Metadata: `◷ 5m ago` in `text_faint`; dates older than a week read
-  `Sep 3`. A description with a checklist adds `✓ 2/5`, in `success`
-  once every item is ticked.
+  `Sep 3`, or as the config file's `date_format` says. A description
+  with a checklist adds `✓ 2/5`, in `success` once every item is
+  ticked.
 - Height fits the content: two to four rows.
 - **Selected** (and the cards have focus): the tile turns `selection`
   and the bar becomes a bolder `▌`.
@@ -157,6 +168,21 @@ Backlog  3
 The column list on `panel`. The active column has a `▌` marker in its
 lane colour; the count is right-aligned with a gap. When the rail has
 focus, the active entry is on `selection`.
+
+Columns are managed from the rail, and every change can be undone:
+
+| Key | |
+|---|---|
+| `a` | Add a column after the active one (a one-line prompt) |
+| `r` | Rename the column; its id, and so its colour, stays |
+| `d` | Delete the column. The dialog says where its tasks go, the column before it at first: h/l choose another column, or deleting them too |
+| `J` / `K` | Move the column down / up (right / left on the board) |
+| `c` | Pick its colour from a menu of the theme's accents, or "Automatic" |
+| `w` | Set its work-in-progress limit; empty or 0 removes it |
+| `z` | Collapse or expand its lane (in the Board view too) |
+
+Moving a task into a column that is already at its limit (with H/L,
+the "move to…" menu or the mouse) asks first: `y` moves it anyway.
 
 ### Detail drawer
 
@@ -245,6 +271,8 @@ The same keys mean the same thing on every screen:
 | `Space` | Which-key: every key for the current screen |
 | `/` | Search; Ctrl+N / Ctrl+P jump between matches |
 
+`b` switches boards (see [Boards](#boards)).
+
 Moving faster: `1`–`9` jump to a lane, `g g` / `G` to the first or last
 card, `g` + a letter to the next lane with that initial.
 
@@ -253,6 +281,73 @@ opens a "move to…" menu, `J`/`K` reorder within a lane, `n` / `N` add a
 task below / above the selected one, `a` quick-adds to the end of the
 lane from a one-line prompt that stays open for the next task, `y`
 duplicates, and `u` / `U` undo and redo.
+
+## Boards
+
+Without `--board`, tui-kanban looks for `.tui-kanban.json` in the
+current directory and each one above it, the way git finds `.git`,
+stopping at the git root (or, outside a repository, at the home
+directory). So running it anywhere in a project opens that project's
+board. When there is none, a **Welcome** dialog (with an `accent`
+border) asks: `c` creates a board here, named after the directory, and
+`p` opens the personal board in the data directory
+(`~/.local/share/tui-kanban/boards/personal.json`). Nothing is written
+until one is chosen, and `q` quits.
+
+`--board` takes a path, or a name: a recent board with that name (in
+the file) or file name, or else a personal board of that name in the
+data directory, created on its first change.
+
+`b` opens the **board switcher**, a menu of the board open now (`●`),
+the recently opened boards that still exist, and the personal board,
+each with its task count and where it is (`~` for home). Enter saves
+this board and opens the other one, with nothing selected and nothing
+to undo; if this board can't be saved, it stays open and says so.
+Recent boards are kept in the state directory.
+
+## The config file
+
+`~/.config/tui-kanban/config.toml` (`$XDG_CONFIG_HOME` is respected;
+`%APPDATA%` on Windows) sets the theme, animations, the mouse, the
+columns of new boards, the date format (`"auto"`, or a pattern with
+`%Y %y %m %d %e %b %B`) and keys. Command-line options win over it.
+`tui-kanban config` prints where it is, and `tui-kanban config
+--print-default` prints a commented copy with every default, including
+every command's keys, generated from the command table.
+
+Keys are rebound by command name, as in `new_task = "+"` or
+`search = ["/", "ctrl+f"]`. The file is checked when it is read: an
+unknown setting or command, a key that can't be read, or two commands
+sharing a key where both apply is an error that names the problem, and
+tui-kanban doesn't start. Digits, `g` + letter, `g` and Space are fixed.
+Help, hints, which-key and the palette all show the keys in use.
+
+## Mouse
+
+The keyboard comes first, but the mouse works where it is tried. What
+is under the pointer is worked out from the same geometry the screen is
+drawn with (`src/ui/hit.rs`), so a click always lands on what is shown.
+
+- **Click** a card to select it, a lane header or empty lane space to
+  focus that lane, a rail entry to focus the rail on it, a view name in
+  the top bar to switch views, and `‹ N more` / `N more ›` to scroll the
+  lanes. A hint in the status line runs its command. With the detail
+  drawer open, clicking another card shows it there.
+- **Double-click** a card to open it, a rail entry to focus its cards,
+  and a collapsed lane to expand it.
+- **The wheel** moves the selection in the active lane and in All tasks
+  (which scrolls to follow it), scrolls other lanes without taking the
+  selection, scrolls the drawer's description and help, and moves
+  through menus and the palette.
+- **Drag** a card to move it. While dragging, an `accent` line between
+  cards (or a bar beside a card in All tasks) shows where it will land;
+  dropping on a rail entry or a collapsed lane puts it at the end of
+  that column. A full column asks first, as with the keys.
+
+While an overlay other than the drawer is open, only the status line
+responds. Capturing the mouse stops the terminal selecting text (most
+terminals still do with Shift held); `--no-mouse`, or `mouse = false` in
+the config file, leaves the mouse to the terminal.
 
 ## Saving
 

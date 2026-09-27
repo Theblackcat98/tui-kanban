@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use super::lanes::count_label;
+use super::lanes::{count_label, count_style};
 use super::text::{self, truncate_text};
 use super::{faint, fg, fill, muted, put};
 use crate::app::{FocusRegion, Model};
@@ -73,7 +73,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model) {
             count_x,
             y,
             count_width,
-            Line::from(Span::styled(count, faint(model))),
+            Line::from(Span::styled(count, count_style(model, index))),
         );
         let name_x = area.x + 3;
         let name_room = count_x.saturating_sub(name_x + 1);

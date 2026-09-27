@@ -7,10 +7,14 @@
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use std::time::Duration;
 use tempfile::TempDir;
-use tui_kanban::app::{Action, App, FocusRegion, SaveState, Toast, ToastKind, ViewMode};
+use tui_kanban::app::{
+    Action, App, BoardEntry, FocusRegion, SaveState, Screen, Toast, ToastKind, ViewMode,
+};
 use tui_kanban::clock::Clock;
 use tui_kanban::domain::{Board, Column, SCHEMA_VERSION, Task};
 use tui_kanban::storage::JsonStore;
@@ -641,4 +645,130 @@ fn which_key_panels() {
         "which_key_g_100x30",
         buffer_text(terminal.backend().buffer())
     );
+}
+
+// Columns (#52)
+
+fn board_with_limits() -> Board {
+    let mut board = typical_board();
+    board.columns[1].wip_limit = Some(2);
+    board.columns[2].wip_limit = Some(1);
+    board.columns[2].collapsed = true;
+    board
+}
+
+#[test]
+fn limits_and_a_collapsed_lane() {
+    let mut harness = Harness::new(board_with_limits());
+    screen_snapshot!("limits_collapsed_100x30", harness, 100, 30);
+    screen_snapshot!("limits_collapsed_160x45", harness, 160, 45);
+    // The collapsed lane, active on a narrow terminal.
+    harness.keys(&[KeyCode::Char('3')]);
+    screen_snapshot!("limits_collapsed_active_60x20", harness, 60, 20);
+}
+
+#[test]
+fn column_dialogs() {
+    let mut harness = Harness::new(board_with_limits());
+    harness.keys(&[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('d')]);
+    screen_snapshot!("delete_column_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Esc, KeyCode::Char('c')]);
+    screen_snapshot!("column_colours_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Esc, KeyCode::Char('w')]);
+    screen_snapshot!("wip_prompt_100x30", harness, 100, 30);
+    harness
+        .keys(&[KeyCode::Esc, KeyCode::Char('a')])
+        .type_text("Review");
+    screen_snapshot!("add_column_100x30", harness, 100, 30);
+    harness.keys(&[
+        KeyCode::Esc,
+        KeyCode::Tab,
+        KeyCode::Char('h'),
+        KeyCode::Char('L'),
+    ]);
+    screen_snapshot!("wip_confirm_100x30", harness, 100, 30);
+}
+
+// Mouse (#49)
+
+fn mouse(harness: &mut Harness, kind: MouseEventKind, x: u16, y: u16) {
+    harness.app.dispatch(
+        Action::Mouse(MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }),
+        clock(),
+    );
+}
+
+#[test]
+fn dragging_shows_where_the_card_goes() {
+    let mut harness = Harness::new(typical_board());
+    harness.render(100, 30);
+    // "Write the README" onto the top half of "Command table".
+    mouse(&mut harness, MouseEventKind::Down(MouseButton::Left), 25, 5);
+    mouse(&mut harness, MouseEventKind::Drag(MouseButton::Left), 55, 9);
+    screen_snapshot!("drag_board_100x30", harness, 100, 30);
+    mouse(&mut harness, MouseEventKind::Up(MouseButton::Left), 55, 9);
+    let titles: Vec<&str> = harness.app.model.board.columns[1]
+        .tasks
+        .iter()
+        .map(|task| task.title.as_str())
+        .collect();
+    assert_eq!(
+        titles,
+        ["Calmer card style", "Write the README", "Command table"]
+    );
+
+    // In All tasks, onto the right half of a card: after it.
+    let mut harness = Harness::new(typical_board());
+    harness.keys(&[KeyCode::Char('v')]).render(100, 30);
+    mouse(&mut harness, MouseEventKind::Down(MouseButton::Left), 25, 9);
+    mouse(
+        &mut harness,
+        MouseEventKind::Drag(MouseButton::Left),
+        80,
+        15,
+    );
+    screen_snapshot!("drag_all_tasks_100x30", harness, 100, 30);
+    mouse(&mut harness, MouseEventKind::Up(MouseButton::Left), 80, 15);
+    let last = harness.app.model.board.columns[1].tasks.last().unwrap();
+    assert_eq!(last.title, "Package release binaries");
+}
+
+// Boards (#51)
+
+#[test]
+fn board_switcher_and_welcome() {
+    let mut harness = Harness::new(typical_board());
+    let entry = |name: &str, detail: &str, current: bool| BoardEntry {
+        path: format!("/boards/{name}.json").into(),
+        name: name.to_owned(),
+        detail: detail.to_owned(),
+        current,
+    };
+    harness.app.dispatch(
+        Action::ShowBoards(vec![
+            entry("Snapshot Board", "7 tasks · ~/src/tui-kanban", true),
+            entry("Website", "12 tasks · ~/src/website", false),
+            entry(
+                "Personal",
+                "new · ~/.local/share/tui-kanban/boards/personal.json",
+                false,
+            ),
+        ]),
+        clock(),
+    );
+    harness.keys(&[KeyCode::Char('j')]);
+    screen_snapshot!("board_switcher_100x30", harness, 100, 30);
+    screen_snapshot!("board_switcher_60x20", harness, 60, 20);
+
+    let mut harness = Harness::new(Board::default());
+    harness.app.model.ui.screens.push(Screen::NoBoard {
+        directory: "~/src/website".to_owned(),
+        personal: Some("/data/boards/personal.json".into()),
+    });
+    screen_snapshot!("no_board_100x30", harness, 100, 30);
 }

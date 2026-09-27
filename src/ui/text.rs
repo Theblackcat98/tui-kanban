@@ -4,6 +4,8 @@
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use crate::config::DateFormat;
+
 /// The width of `text` in terminal cells.
 pub(crate) fn width(text: &str) -> usize {
     text.width()
@@ -122,8 +124,9 @@ pub(crate) fn wrap(text: &str, max_width: usize, max_lines: usize) -> Vec<String
 
 /// How long ago `timestamp` was, as "just now", "5m ago", "3h ago" or
 /// "2d ago", or as a date ("Aug 20", or "Aug 29, 2025" in another year)
-/// after a week. Both times are Unix milliseconds; dates are in UTC.
-pub(crate) fn relative_time(timestamp: i64, now: i64) -> String {
+/// after a week, in `format`. Both times are Unix milliseconds; dates are
+/// in UTC.
+pub(crate) fn relative_time(timestamp: i64, now: i64, format: &DateFormat) -> String {
     const MINUTE: i64 = 60_000;
     const HOUR: i64 = 60 * MINUTE;
     const DAY: i64 = 24 * HOUR;
@@ -133,22 +136,56 @@ pub(crate) fn relative_time(timestamp: i64, now: i64) -> String {
         MINUTE..HOUR => format!("{}m ago", elapsed / MINUTE),
         HOUR..DAY => format!("{}h ago", elapsed / HOUR),
         _ if elapsed < 7 * DAY => format!("{}d ago", elapsed / DAY),
-        _ => short_date(timestamp, now),
+        _ => date(timestamp, now, format),
     }
 }
 
-/// "Sep 3", or "Sep 3, 2025" when the year differs from `now`'s.
-pub(crate) fn short_date(timestamp: i64, now: i64) -> String {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+/// A date in `format`: by default "Sep 3", or "Sep 3, 2025" when the year
+/// differs from `now`'s.
+pub(crate) fn date(timestamp: i64, now: i64, format: &DateFormat) -> String {
     let (year, month, day) = civil_date(timestamp);
-    let month = MONTHS[(month - 1) as usize];
-    if year == civil_date(now).0 {
-        format!("{month} {day}")
-    } else {
-        format!("{month} {day}, {year}")
+    let month_name = MONTHS[(month - 1) as usize];
+    let short_month: String = month_name.chars().take(3).collect();
+    let pattern = match format {
+        DateFormat::Pattern(pattern) => pattern.as_str(),
+        DateFormat::Auto if year == civil_date(now).0 => return format!("{short_month} {day}"),
+        DateFormat::Auto => return format!("{short_month} {day}, {year}"),
+    };
+    let mut text = String::new();
+    let mut characters = pattern.chars();
+    while let Some(character) = characters.next() {
+        if character != '%' {
+            text.push(character);
+            continue;
+        }
+        match characters.next() {
+            Some('Y') => text.push_str(&year.to_string()),
+            Some('y') => text.push_str(&format!("{:02}", year.rem_euclid(100))),
+            Some('m') => text.push_str(&format!("{month:02}")),
+            Some('d') => text.push_str(&format!("{day:02}")),
+            Some('e') => text.push_str(&day.to_string()),
+            Some('b') => text.push_str(&short_month),
+            Some('B') => text.push_str(month_name),
+            Some(other) => text.push(other),
+            None => text.push('%'),
+        }
     }
+    text
 }
 
 /// The UTC (year, month, day) of a Unix millisecond timestamp, using
@@ -249,14 +286,26 @@ mod tests {
     #[test]
     fn relative_times() {
         let now = 1_788_000_000_000; // 2026-08-29 10:40 UTC
-        assert_eq!(relative_time(now - 30_000, now), "just now");
-        assert_eq!(relative_time(now - 5 * 60_000, now), "5m ago");
-        assert_eq!(relative_time(now - 3 * 3_600_000, now), "3h ago");
-        assert_eq!(relative_time(now - 3 * 86_400_000, now), "3d ago");
-        assert_eq!(relative_time(now - 9 * 86_400_000, now), "Aug 20");
-        assert_eq!(relative_time(now - 365 * 86_400_000, now), "Aug 29, 2025");
+        let relative_time = |timestamp| relative_time(timestamp, now, &DateFormat::Auto);
+        assert_eq!(relative_time(now - 30_000), "just now");
+        assert_eq!(relative_time(now - 5 * 60_000), "5m ago");
+        assert_eq!(relative_time(now - 3 * 3_600_000), "3h ago");
+        assert_eq!(relative_time(now - 3 * 86_400_000), "3d ago");
+        assert_eq!(relative_time(now - 9 * 86_400_000), "Aug 20");
+        assert_eq!(relative_time(now - 365 * 86_400_000), "Aug 29, 2025");
         // A timestamp in the future reads as now.
-        assert_eq!(relative_time(now + 60_000, now), "just now");
+        assert_eq!(relative_time(now + 60_000), "just now");
+    }
+
+    #[test]
+    fn dates_follow_a_pattern() {
+        let now = 1_788_000_000_000; // 2026-08-29
+        let then = now - 26 * 86_400_000; // 2026-08-03
+        let date = |pattern: &str| date(then, now, &DateFormat::Pattern(pattern.to_owned()));
+        assert_eq!(date("%Y-%m-%d"), "2026-08-03");
+        assert_eq!(date("%e %B %y"), "3 August 26");
+        assert_eq!(date("%b %e, 100%%"), "Aug 3, 100%");
+        assert_eq!(super::date(then, now, &DateFormat::Auto), "Aug 3");
     }
 
     #[test]

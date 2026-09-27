@@ -1,5 +1,6 @@
-//! Confirmation dialogs: deleting a task, discarding an edited draft, a
-//! board that changed on disk, and quitting with unsaved changes.
+//! Confirmation dialogs: deleting a task or a column, discarding an edited
+//! draft, moving a task into a full column, a board that changed on disk,
+//! and quitting with unsaved changes.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -33,10 +34,91 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, task: Uui
         model,
         "Delete task",
         &question,
-        "You can undo this with u.",
+        &undo_note(),
         Context::Confirm,
         clock,
     );
+}
+
+/// "Delete column?", with where its tasks go.
+pub(crate) fn render_delete_column(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    column: usize,
+    tasks_to: Option<usize>,
+    clock: Clock,
+) {
+    let columns = &model.board.columns;
+    let Some(data) = columns.get(column) else {
+        return;
+    };
+    let question = |width: usize| {
+        format!(
+            "Delete column \"{}\"?",
+            truncate_text(&data.name, width.saturating_sub(18))
+        )
+    };
+    let count = data.tasks.len();
+    let tasks = if count == 1 {
+        "Its task".to_owned()
+    } else {
+        format!("Its {count} tasks")
+    };
+    let detail = match tasks_to.and_then(|target| columns.get(target)) {
+        _ if count == 0 => format!("It has no tasks. {}", undo_note()),
+        Some(target) => format!("{tasks} move to ‹ {} ›", target.name),
+        None => format!("{tasks} are deleted too ‹ h / l ›"),
+    };
+    dialog(
+        frame,
+        area,
+        model,
+        "Delete column",
+        &question,
+        &detail,
+        Context::DeleteColumn,
+        clock,
+    );
+}
+
+/// Moving a task into a column that is at its work-in-progress limit.
+pub(crate) fn render_wip(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    column: usize,
+    clock: Clock,
+) {
+    let Some(data) = model.board.columns.get(column) else {
+        return;
+    };
+    let question = |width: usize| {
+        format!(
+            "{} is full ({}/{}).",
+            truncate_text(&data.name, width.saturating_sub(12)),
+            data.tasks.len(),
+            data.limit().unwrap_or(0)
+        )
+    };
+    dialog(
+        frame,
+        area,
+        model,
+        "Work-in-progress limit",
+        &question,
+        "Move the task there anyway?",
+        Context::ConfirmWip,
+        clock,
+    );
+}
+
+/// "You can undo this with u.", with the key in use.
+fn undo_note() -> String {
+    match crate::command::key_label(crate::command::CommandId::Undo) {
+        Some(key) => format!("You can undo this with {key}."),
+        None => "You can undo this from the command palette.".to_owned(),
+    }
 }
 
 /// "Discard changes?", when an edited draft is cancelled.
@@ -99,10 +181,67 @@ fn dialog(
     context: Context,
     clock: Clock,
 ) {
+    dialog_in(
+        frame,
+        area,
+        model,
+        (title, 52),
+        model.ui.theme.danger,
+        question,
+        detail,
+        context,
+        clock,
+    );
+}
+
+/// "No board here": create one, or open the personal board.
+pub(crate) fn render_no_board(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    directory: &str,
+    clock: Clock,
+) {
+    let question = |width: usize| {
+        format!(
+            "No board in {}",
+            truncate_text(directory, width.saturating_sub(12))
+        )
+    };
+    let detail = if model.command_enabled(crate::command::CommandId::OpenPersonal) {
+        "Create one here, open your personal board, or q to quit."
+    } else {
+        "Create one here, or q to quit."
+    };
+    dialog_in(
+        frame,
+        area,
+        model,
+        ("Welcome", 62),
+        model.ui.theme.accent,
+        &question,
+        detail,
+        Context::NoBoard,
+        clock,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dialog_in(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    (title, width): (&str, u16),
+    border: ratatui::style::Color,
+    question: &dyn Fn(usize) -> String,
+    detail: &str,
+    context: Context,
+    clock: Clock,
+) {
     let theme = &model.ui.theme;
-    let modal = centered_rect(area, 52, 8);
+    let modal = centered_rect(area, width, 8);
     frame.render_widget(Clear, modal);
-    let block = overlay_block(model, title, theme.danger);
+    let block = overlay_block(model, title, border);
     let inner = block.inner(modal);
     frame.render_widget(block, modal);
     let inner = Rect::new(
