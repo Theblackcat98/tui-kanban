@@ -116,7 +116,7 @@ fn render_input(
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             format!(" {label}"),
-            field_label(model, label, active),
+            field_label(model, active),
         )))
         .style(surface_style(model)),
         columns[0],

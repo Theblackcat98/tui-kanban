@@ -126,10 +126,6 @@ impl Board {
         Ok(())
     }
 
-    pub fn column_index(&self, id: &str) -> Option<usize> {
-        self.columns.iter().position(|column| column.id == id)
-    }
-
     pub fn task_location(&self, id: Uuid) -> Option<(usize, usize)> {
         self.columns
             .iter()
@@ -146,12 +142,6 @@ impl Board {
     pub fn task(&self, id: Uuid) -> Option<&Task> {
         self.task_location(id)
             .and_then(|(column_index, task_index)| self.columns[column_index].tasks.get(task_index))
-    }
-
-    pub fn column(&self, index: usize) -> Result<&Column, BoardError> {
-        self.columns
-            .get(index)
-            .ok_or(BoardError::InvalidColumn(index))
     }
 
     pub fn add_task(
@@ -225,9 +215,7 @@ impl Board {
             requested_index
         }
         .min(max_index);
-        self.columns[to_column]
-            .tasks
-            .insert(insertion_index, task.clone());
+        self.columns[to_column].tasks.insert(insertion_index, task);
         self.columns[to_column].tasks[insertion_index].touch(now);
 
         Ok(MoveOutcome {
@@ -237,14 +225,6 @@ impl Board {
             to_column,
             to_index: insertion_index,
         })
-    }
-
-    pub fn search(&self, query: &str) -> usize {
-        self.columns
-            .iter()
-            .flat_map(|column| column.tasks.iter())
-            .filter(|task| task.matches(query))
-            .count()
     }
 
     pub fn task_count(&self) -> usize {
@@ -306,19 +286,5 @@ mod tests {
             board.add_task(9, "Task", "", 0),
             Err(BoardError::InvalidColumn(9))
         );
-    }
-
-    #[test]
-    fn search_matches_title_and_description() {
-        let mut board = Board::default();
-        board
-            .add_task(0, "Design cards", "Use Catppuccin", 0)
-            .unwrap();
-        board
-            .add_task(0, "Write tests", "Cover storage", 0)
-            .unwrap();
-        assert_eq!(board.search("catppuccin"), 1);
-        assert_eq!(board.search("storage"), 1);
-        assert_eq!(board.search(""), 2);
     }
 }

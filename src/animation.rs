@@ -70,14 +70,6 @@ impl AnimationEngine {
         }
     }
 
-    pub fn is_active(&self, now: Instant) -> bool {
-        self.settings.enabled
-            && self
-                .animations
-                .iter()
-                .any(|animation| !animation.is_finished(now))
-    }
-
     /// How long to wait before drawing the next frame, or `None` when no
     /// animation is running. Frames are at most [`FRAME_INTERVAL`] apart,
     /// and the last one lands when the shortest animation finishes.
@@ -119,14 +111,6 @@ pub fn ease_out_cubic(value: f32) -> f32 {
     1.0 - (1.0 - value).powi(3)
 }
 
-pub fn ease_in_out_cubic(value: f32) -> f32 {
-    if value < 0.5 {
-        4.0 * value * value * value
-    } else {
-        1.0 - ((-2.0 * value + 2.0).powi(3) / 2.0)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,7 +123,7 @@ mod tests {
             Duration::from_millis(200),
             Instant::now(),
         );
-        assert!(!engine.is_active(Instant::now()));
+        assert_eq!(engine.next_frame_timeout(Instant::now()), None);
         assert_eq!(engine.progress(AnimationKind::Modal, Instant::now()), None);
     }
 
@@ -148,11 +132,14 @@ mod tests {
         let mut engine = AnimationEngine::new(AnimationSettings { enabled: true });
         let now = Instant::now();
         engine.start(AnimationKind::Drawer, Duration::from_millis(100), now);
-        assert!(engine.is_active(now));
+        assert!(engine.next_frame_timeout(now).is_some());
         let progress = engine.progress(AnimationKind::Drawer, now).unwrap();
         assert!((0.0..=1.0).contains(&progress));
         engine.tick(now + Duration::from_millis(101));
-        assert!(!engine.is_active(now + Duration::from_millis(101)));
+        assert_eq!(
+            engine.next_frame_timeout(now + Duration::from_millis(101)),
+            None
+        );
     }
 
     #[test]
@@ -178,7 +165,6 @@ mod tests {
         for step in 0..=10 {
             let value = step as f32 / 10.0;
             assert!((0.0..=1.0).contains(&ease_out_cubic(value)));
-            assert!((0.0..=1.0).contains(&ease_in_out_cubic(value)));
         }
     }
 }

@@ -269,7 +269,7 @@ pub(crate) fn render_clear(frame: &mut Frame<'_>, area: Rect) {
     frame.render_widget(Clear, area);
 }
 
-pub(crate) fn field_label(model: &Model, _label: &str, active: bool) -> Style {
+pub(crate) fn field_label(model: &Model, active: bool) -> Style {
     if active {
         Style::default()
             .fg(model.ui.theme.accent)
