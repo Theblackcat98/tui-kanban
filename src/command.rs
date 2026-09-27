@@ -107,6 +107,12 @@ impl Contexts {
 
 const CARDS: Contexts = Contexts::of(&[Context::Board, Context::AllTasks]);
 const DASHBOARD: Contexts = Contexts::of(&[Context::Board, Context::AllTasks, Context::Rail]);
+const UNDO: Contexts = Contexts::of(&[
+    Context::Board,
+    Context::AllTasks,
+    Context::Rail,
+    Context::Detail,
+]);
 const TASK_ACTIONS: Contexts = Contexts::of(&[Context::Board, Context::AllTasks, Context::Detail]);
 
 const fn only(context: Context) -> Contexts {
@@ -205,6 +211,9 @@ pub enum CommandId {
     ApplySearch,
     ScrollUp,
     ScrollDown,
+    ToggleItem,
+    NextItem,
+    PreviousItem,
     LineUp,
     LineDown,
     CloseDetail,
@@ -734,9 +743,9 @@ pub const COMMANDS: &[Command] = &[
         G::Tasks,
         TASK_ACTIONS,
     ),
-    Command::new(C::Undo, &[ch('u'), ctrl('z')], "undo", G::Tasks, DASHBOARD)
+    Command::new(C::Undo, &[ch('u'), ctrl('z')], "undo", G::Tasks, UNDO)
         .pair(C::Redo, "undo / redo"),
-    Command::new(C::Redo, &[ch('U'), ctrl('r')], "redo", G::Tasks, DASHBOARD),
+    Command::new(C::Redo, &[ch('U'), ctrl('r')], "redo", G::Tasks, UNDO),
     Command::new(C::Search, &[ch('/')], "search", G::Tasks, DASHBOARD).hint(10, "search"),
     Command::new(
         C::ClearSearch,
@@ -780,6 +789,30 @@ pub const COMMANDS: &[Command] = &[
         C::LineUp,
         &[ch('k'), key(KeyCode::Up)],
         "scroll up a line",
+        G::Details,
+        only(Context::Detail),
+    ),
+    Command::new(
+        C::ToggleItem,
+        &[ch(' ')],
+        "tick / untick checklist item",
+        G::Details,
+        only(Context::Detail),
+    )
+    .hint(8, "tick"),
+    Command::new(
+        C::NextItem,
+        &[key(KeyCode::Tab)],
+        "next checklist item",
+        G::Details,
+        only(Context::Detail),
+    )
+    .hint(9, "item")
+    .pair(C::PreviousItem, "next / previous checklist item"),
+    Command::new(
+        C::PreviousItem,
+        &[key(KeyCode::BackTab)],
+        "previous checklist item",
         G::Details,
         only(Context::Detail),
     ),

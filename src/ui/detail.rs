@@ -14,6 +14,7 @@ use ratatui::widgets::{
 use uuid::Uuid;
 
 use super::geometry;
+use super::rich::Tone;
 use super::text::{relative_time, short_date, truncate_text};
 use super::{AnimationKind, faint, fg, muted, progress, short_id};
 use crate::app::Model;
@@ -25,6 +26,7 @@ pub(crate) fn render(
     model: &Model,
     task: Uuid,
     scroll: u16,
+    item: usize,
     clock: Clock,
 ) {
     let drawer = drawer.intersection(frame.area());
@@ -32,7 +34,7 @@ pub(crate) fn render(
         return;
     }
     let mut buffer = Buffer::empty(Rect::new(0, 0, drawer.width, drawer.height));
-    draw(&mut buffer, model, task, scroll, clock);
+    draw(&mut buffer, model, task, scroll, item, clock);
 
     let shown =
         (f32::from(drawer.width) * progress(model, AnimationKind::Drawer, clock)).round() as u16;
@@ -45,7 +47,7 @@ pub(crate) fn render(
     }
 }
 
-fn draw(buffer: &mut Buffer, model: &Model, task_id: Uuid, scroll: u16, clock: Clock) {
+fn draw(buffer: &mut Buffer, model: &Model, task_id: Uuid, scroll: u16, item: usize, clock: Clock) {
     let theme = &model.ui.theme;
     let area = buffer.area;
     Block::default()
@@ -121,12 +123,31 @@ fn draw(buffer: &mut Buffer, model: &Model, task_id: Uuid, scroll: u16, clock: C
         return;
     }
     let scroll = scroll.min(layout.max_scroll());
+    let focused = layout.item_lines(item);
     let lines: Vec<Line> = layout
         .description
         .iter()
+        .enumerate()
         .skip(scroll as usize)
         .take(body.height as usize)
-        .map(|text| Line::from(Span::styled(text.clone(), fg(theme.text))))
+        .map(|(index, line)| {
+            let spans = line
+                .spans
+                .iter()
+                .map(|(text, tone)| Span::styled(text.clone(), style(model, *tone)))
+                .collect::<Vec<_>>();
+            let line = Line::from(spans);
+            // The item Space toggles is highlighted, like a selected card.
+            if focused.contains(&index) {
+                line.style(
+                    Style::default()
+                        .bg(theme.selection)
+                        .add_modifier(theme.selected_modifier),
+                )
+            } else {
+                line
+            }
+        })
         .collect();
     Paragraph::new(lines).render(body, buffer);
     if layout.max_scroll() > 0 {
@@ -141,6 +162,25 @@ fn draw(buffer: &mut Buffer, model: &Model, task_id: Uuid, scroll: u16, clock: C
             .thumb_symbol("┃")
             .thumb_style(fg(theme.text_muted))
             .render(layout.scrollbar, buffer, &mut state);
+    }
+}
+
+/// The style for a tone of description text.
+fn style(model: &Model, tone: Tone) -> Style {
+    let theme = &model.ui.theme;
+    match tone {
+        Tone::Text => fg(theme.text),
+        Tone::Muted => muted(model),
+        Tone::Faint => faint(model),
+        Tone::Bold => fg(theme.text).add_modifier(Modifier::BOLD),
+        Tone::Italic => fg(theme.text_muted).add_modifier(Modifier::ITALIC),
+        Tone::Code => fg(theme.text).bg(theme.surface),
+        Tone::Heading => fg(if theme.is_monochrome() {
+            theme.text
+        } else {
+            theme.accent
+        })
+        .add_modifier(Modifier::BOLD),
     }
 }
 

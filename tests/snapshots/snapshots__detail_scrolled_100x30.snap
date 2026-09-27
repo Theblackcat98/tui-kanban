@@ -8,27 +8,27 @@ expression: "harness.screen(100, 30)"
                        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▎
  ▌ Backlog         3                                        ▎  Backlog · #00000000
    In Progress     2   ▌ Write the README        ▎ Calmer ca▎  updated 1d ago · created Aug 27
-   Done            2   ▌ - line 1                ▎ Tiles wit▎
-                       ▌ ◷ 1d ago                ▎ ◷ 12m ago▎    - line 3                         │
-                                                            ▎    - line 4                         ┃
-                       ▎ Record a demo           ▎ Command t▎    - line 5                         ┃
-                       ▎ Commit the .tape fil…   ▎ Every key▎    - line 6                         ┃
-                       ▎ ◷ 3d ago                ▎ ◷ 1h ago ▎    - line 7                         ┃
-                                                            ▎    - line 8                         ┃
-                       ▎ Package release                    ▎    - line 9                         ┃
-                       ▎ binaries                           ▎    - line 10                        ┃
-                       ▎ ◷ Aug 20                           ▎    - line 11                        ┃
-                                                            ▎    - line 12                        ┃
-                                                            ▎    - line 13                        ┃
-                                                            ▎    - line 14                        ┃
-                                                            ▎    - line 15                        │
-                                                            ▎    - line 16                        │
-                                                            ▎    - line 17                        │
-                                                            ▎    - line 18                        │
-                                                            ▎    - line 19                        │
-                                                            ▎    - line 20                        │
-                                                            ▎    - line 21                        │
-                                                            ▎    - line 22                        │
-                                                            ▎    - line 23                        │
+   Done            2   ▌ • line 1                ▎ Tiles wit▎
+                       ▌ ◷ 1d ago                ▎ ◷ 12m ago▎    • line 3                         │
+                                                            ▎    • line 4                         ┃
+                       ▎ Record a demo           ▎ Command t▎    • line 5                         ┃
+                       ▎ Commit the .tape fil…   ▎ Every key▎    • line 6                         ┃
+                       ▎ ◷ 3d ago                ▎ ◷ 1h ago ▎    • line 7                         ┃
+                                                            ▎    • line 8                         ┃
+                       ▎ Package release                    ▎    • line 9                         ┃
+                       ▎ binaries                           ▎    • line 10                        ┃
+                       ▎ ◷ Aug 20                           ▎    • line 11                        ┃
+                                                            ▎    • line 12                        ┃
+                                                            ▎    • line 13                        ┃
+                                                            ▎    • line 14                        ┃
+                                                            ▎    • line 15                        │
+                                                            ▎    • line 16                        │
+                                                            ▎    • line 17                        │
+                                                            ▎    • line 18                        │
+                                                            ▎    • line 19                        │
+                                                            ▎    • line 20                        │
+                                                            ▎    • line 21                        │
+                                                            ▎    • line 22                        │
+                                                            ▎    • line 23                        │
                                                             ▎
  DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help

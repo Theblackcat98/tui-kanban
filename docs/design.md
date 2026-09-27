@@ -125,10 +125,12 @@ Backlog  3
 
 - A tile on `surface`, with a `▎` bar in the lane's accent.
 - Title: bold, wrapped to at most two lines, ending in `…` if cut.
-- Description: its first non-empty line in `text_muted`, cut with `…`.
-  Left out when empty.
+- Description: its first line with content in `text_muted`, without
+  its Markdown (`- [ ] tag` reads `☐ tag`), cut with `…`. Left out when
+  empty.
 - Metadata: `◷ 5m ago` in `text_faint`; dates older than a week read
-  `Sep 3`.
+  `Sep 3`. A description with a checklist adds `✓ 2/5`, in `success`
+  once every item is ticked.
 - Height fits the content: two to four rows.
 - **Selected** (and the cards have focus): the tile turns `selection`
   and the bar becomes a bolder `▌`.
@@ -143,10 +145,21 @@ focus, the active entry is on `selection`.
 
 On `panel`, with an accent edge. The title wraps in full (up to a third
 of the height); two lines of metadata follow (`Backlog · #1a2b3c4d`,
-then `updated 2d ago · created Sep 3`), then the description with its
-line breaks and indentation kept, scrollable (j/k a line, PgUp/PgDn a
-page, stopping at the end) and with a scrollbar when it overflows. Its
-hints are in the status line.
+then `updated 2d ago · created Sep 3`), then the description as
+lightweight Markdown, scrollable (j/k a line, PgUp/PgDn a page, stopping
+at the end) and with a scrollbar when it overflows. Its hints are in the
+status line.
+
+The Markdown is line by line: `#` headings in bold `accent`; `•` bullets,
+numbered lists and `☐` / `☑` checklist items, with wrapped lines hanging
+under their text; `│` quotes in italic; fenced code on `surface`, kept
+as written; and inline **bold**, *italic* and `code`. Anything else is
+plain text with its indentation kept.
+
+When the description has a checklist, one item is focused (on
+`selection`): Tab / Shift+Tab move between items and Space ticks or
+unticks it, as an undoable change. `E` edits the description in
+`$EDITOR`.
 
 ### Overlays
 

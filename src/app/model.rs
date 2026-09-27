@@ -42,9 +42,11 @@ pub enum FocusRegion {
 /// first, and Esc pops it, returning to whatever is underneath.
 #[derive(Clone, Debug)]
 pub enum Screen {
+    /// The detail drawer. `item` is the checklist item Space toggles.
     Detail {
         task: Uuid,
         scroll: u16,
+        item: usize,
     },
     Editor(Box<EditorState>),
     ConfirmDelete {
@@ -253,6 +255,15 @@ impl Model {
         match id {
             CommandId::ClearSearch => self.ui.search.is_active(),
             CommandId::JumpToLane | CommandId::GoToLane => self.board.columns.len() > 1,
+            CommandId::ToggleItem | CommandId::NextItem | CommandId::PreviousItem => {
+                matches!(
+                    self.ui.screens.last(),
+                    Some(Screen::Detail { task, .. })
+                        if self.board.task(*task).is_some_and(|task| {
+                            crate::markdown::progress(&task.description).is_some()
+                        })
+                )
+            }
             CommandId::ToggleFocus => self.breakpoint().shows_rail(),
             CommandId::Undo => self.session.history.can_undo(),
             CommandId::Redo => self.session.history.can_redo(),

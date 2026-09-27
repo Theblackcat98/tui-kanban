@@ -17,6 +17,7 @@ use super::{AnimationKind, blend_color, faint, fg, fill, muted, progress, put};
 use crate::app::Model;
 use crate::clock::Clock;
 use crate::domain::Task;
+use crate::markdown;
 
 /// Draws a card into `area`, which may be shorter than the card if it is
 /// cut off at the bottom of a list.
@@ -85,10 +86,20 @@ pub(crate) fn render(
     if let Some(description) = text.description {
         lines.push(Line::from(Span::styled(description, muted(model))));
     }
-    lines.push(Line::from(Span::styled(
+    let mut meta = vec![Span::styled(
         format!("◷ {}", relative_time(task.updated_at, clock.wall_millis)),
         faint(model),
-    )));
+    )];
+    // Checklist progress, as "✓ 2/5", in `success` once all are done.
+    if let Some((done, total)) = markdown::progress(&task.description) {
+        let style = if done == total {
+            fg(theme.success)
+        } else {
+            faint(model)
+        };
+        meta.push(Span::styled(format!("   ✓ {done}/{total}"), style));
+    }
+    lines.push(Line::from(meta));
     let x = area.x.saturating_add(2);
     let width = area.width.saturating_sub(3);
     for (row, line) in lines.into_iter().enumerate() {

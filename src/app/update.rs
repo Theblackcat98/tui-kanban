@@ -149,7 +149,11 @@ impl Updater<'_> {
             }
             CommandId::OpenDetail => {
                 if let Some(task) = self.model.selected_task_id() {
-                    self.push(Screen::Detail { task, scroll: 0 });
+                    self.push(Screen::Detail {
+                        task,
+                        scroll: 0,
+                        item: 0,
+                    });
                     self.animate(AnimationKind::Drawer, 220);
                 }
             }
@@ -205,6 +209,9 @@ impl Updater<'_> {
                     });
                 }
             }
+            CommandId::ToggleItem => self.toggle_item(),
+            CommandId::NextItem => self.move_item(1),
+            CommandId::PreviousItem => self.move_item(-1),
             CommandId::MoveTaskUp => self.reorder_task(-1),
             CommandId::MoveTaskDown => self.reorder_task(1),
             CommandId::EditTask => {
@@ -312,6 +319,48 @@ impl Updater<'_> {
                 _ => {}
             }
         }
+    }
+
+    /// Ticks or unticks the focused checklist item in the drawer.
+    fn toggle_item(&mut self) {
+        let Some(&Screen::Detail { task: id, item, .. }) = self.model.ui.screens.last() else {
+            return;
+        };
+        let Some(task) = self.model.board.task(id) else {
+            return;
+        };
+        let Some((description, checked, text)) = crate::markdown::toggle(&task.description, item)
+        else {
+            return;
+        };
+        let title = task.title.clone();
+        let label = format!("{} '{text}'", if checked { "tick" } else { "untick" });
+        if let Err(message) = self.change(label, |board, now| {
+            board.update_task(id, title, description, now)
+        }) {
+            self.toast(message, ToastKind::Error, None);
+        }
+    }
+
+    /// Moves the drawer's checklist focus, wrapping around, and scrolls
+    /// to it.
+    fn move_item(&mut self, direction: isize) {
+        let Some(Screen::Detail { task, item, .. }) = self.model.ui.screens.last() else {
+            return;
+        };
+        let Some((_, total)) = self
+            .model
+            .board
+            .task(*task)
+            .and_then(|task| crate::markdown::progress(&task.description))
+        else {
+            return;
+        };
+        let next = (*item as isize + direction).rem_euclid(total as isize) as usize;
+        if let Some(Screen::Detail { item, .. }) = self.model.ui.screens.last_mut() {
+            *item = next;
+        }
+        ui::reveal_detail_item(self.model);
     }
 
     fn finish_external_edit(&mut self, target: ExternalTarget, result: Result<String, String>) {
@@ -502,6 +551,12 @@ impl Updater<'_> {
 
     fn restore(&mut self, entry: Entry, verb: &str) {
         self.model.board = entry.board;
+        // A drawer showing a task the undo removed has nothing to show.
+        if let Some(Screen::Detail { task, .. }) = self.model.ui.screens.last()
+            && self.model.board.task(*task).is_none()
+        {
+            self.pop();
+        }
         self.model.ui.selected = entry.selected;
         self.model.reconcile_selection();
         self.effects.push(Effect::Save);
@@ -655,9 +710,12 @@ impl Updater<'_> {
         match self.change(label, |board, now| board.duplicate_task(id, now)) {
             Ok(copy) => {
                 // A copy made from the drawer opens in the drawer.
-                if let Some(Screen::Detail { task, scroll }) = self.model.ui.screens.last_mut() {
+                if let Some(Screen::Detail { task, scroll, item }) =
+                    self.model.ui.screens.last_mut()
+                {
                     *task = copy;
                     *scroll = 0;
+                    *item = 0;
                 }
                 self.model.select_task(copy);
                 self.model.reconcile_selection();

@@ -9,7 +9,7 @@ expression: "harness.screen(100, 30)"
  ▌ A column with … 2
    Done            1   ▌ A very long task title that keeps    ▎ exact
                        ▌ going well past the width of any…    ▎ ◷ 1d ago
-                       ▌ - an indented list item
+                       ▌ • an indented list item
                        ▌ ◷ 2m ago
 
                        ▎ 日本語のタスク名と絵文字 🦀🚀

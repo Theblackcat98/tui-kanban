@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(100, 30)"
+---
+ Snapshot Board   Board · All tasks
+                                                            ▎
+  Columns              Backlog  3                In Progress▎  Write the README
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▎
+ ▌ Backlog         3                                        ▎  Backlog · #00000000
+   In Progress     2   ▌ Write the README        ▎ Calmer ca▎  updated 1d ago · created Aug 27
+   Done            2   ▌ Before the release      ▎ Tiles wit▎
+                       ▌ ◷ 1d ago   ✓ 1/3        ▎ ◷ 12m ago▎  Before the release
+                                                            ▎  Write it for new users first, then
+                       ▎ Record a demo           ▎ Command t▎  everyone.
+                       ▎ Commit the .tape fil…   ▎ Every key▎
+                       ▎ ◷ 3d ago                ▎ ◷ 1h ago ▎  ☑ Install with cargo install
+                                                            ▎  ☐ Usage, with a recorded demo that
+                       ▎ Package release                    ▎    shows the board and the palette
+                       ▎ binaries                           ▎  ☐ Keys
+                       ▎ ◷ Aug 20                           ▎
+                                                            ▎  │ Keep it short.
+                                                            ▎
+                                                            ▎  cargo run -- --board demo.json
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+ DETAIL   ● saved   e edit   H/L move   Space tick   d delete   Tab/Shift+Tab item   Esc close

@@ -536,3 +536,20 @@ fn discard_confirmation() {
         .keys(&[KeyCode::Esc]);
     screen_snapshot!("confirm_discard_100x30", harness, 100, 30);
 }
+
+#[test]
+fn markdown_description_with_a_checklist() {
+    let mut board = typical_board();
+    board.columns[0].tasks[0].description = "## Before the release\n\
+        Write it for **new users** first, then *everyone*.\n\n\
+        - [x] Install with `cargo install`\n\
+        - [ ] Usage, with a recorded demo that shows the board and the palette\n\
+        - [ ] Keys\n\n\
+        > Keep it short.\n\n\
+        ```\ncargo run -- --board demo.json\n```"
+        .to_owned();
+    let mut harness = Harness::new(board);
+    screen_snapshot!("markdown_card_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Enter, KeyCode::Tab]);
+    screen_snapshot!("markdown_detail_100x30", harness, 100, 30);
+}

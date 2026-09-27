@@ -498,6 +498,40 @@ mod tests {
     }
 
     #[test]
+    fn space_ticks_checklist_items_in_the_drawer() {
+        let (_directory, mut app) = test_app();
+        let id = app
+            .model
+            .board
+            .add_task(
+                0,
+                "Release",
+                "Steps:\n- [ ] tag\n- [ ] build\n- [x] notes",
+                0,
+            )
+            .unwrap();
+        app.model.reconcile_selection();
+        let description = |app: &App| app.model.board.task(id).unwrap().description.clone();
+        press(&mut app, &[KeyCode::Enter, KeyCode::Char(' ')]);
+        assert!(description(&app).contains("- [x] tag"));
+        assert_eq!(toast_message(&app), "");
+        press(&mut app, &[KeyCode::Tab, KeyCode::Char(' ')]);
+        assert_eq!(crate::markdown::progress(&description(&app)), Some((3, 3)));
+        // Shift+Tab wraps around to the last item.
+        press(
+            &mut app,
+            &[KeyCode::BackTab, KeyCode::BackTab, KeyCode::Char(' ')],
+        );
+        assert!(description(&app).contains("- [ ] notes"));
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert!(description(&app).contains("- [x] notes"));
+        assert_eq!(
+            toast_message(&app),
+            "Undid: tick 'notes'".replace("tick", "untick")
+        );
+    }
+
+    #[test]
     fn empty_title_keeps_the_editor_open() {
         let (_directory, mut app) = test_app();
         press(&mut app, &[KeyCode::Char('n'), KeyCode::Enter]);

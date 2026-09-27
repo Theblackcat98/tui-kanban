@@ -13,9 +13,10 @@ mod lanes;
 mod menu;
 mod prompt;
 mod rail;
+mod rich;
 mod text;
 
-pub(crate) use geometry::{all_tasks_rows, sync_scroll};
+pub(crate) use geometry::{all_tasks_rows, reveal_detail_item, sync_scroll};
 
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{Model, Screen, ViewMode};
@@ -54,9 +55,9 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
     // drawer appears on top of it.
     for screen in &model.ui.screens {
         match screen {
-            Screen::Detail { task, scroll } => {
+            Screen::Detail { task, scroll, item } => {
                 if let Some(drawer) = page.drawer {
-                    detail::render(frame, drawer, model, *task, *scroll, clock);
+                    detail::render(frame, drawer, model, *task, *scroll, *item, clock);
                 }
             }
             Screen::Editor(editor) => editor::render(frame, area, model, editor, clock),
@@ -291,7 +292,11 @@ mod tests {
             .board
             .add_task(0, "Inspect me", "A useful description", 0)
             .unwrap();
-        model.ui.screens.push(Screen::Detail { task, scroll: 0 });
+        model.ui.screens.push(Screen::Detail {
+            task,
+            scroll: 0,
+            item: 0,
+        });
         let rendered = render_text(&model, 100, 30);
         assert!(rendered.contains("DETAIL"), "{rendered}");
         assert!(rendered.contains("created"));

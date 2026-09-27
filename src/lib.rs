@@ -4,6 +4,7 @@ pub mod clock;
 pub mod command;
 pub mod domain;
 pub mod layout;
+pub mod markdown;
 pub mod paths;
 pub mod storage;
 pub mod theme;
