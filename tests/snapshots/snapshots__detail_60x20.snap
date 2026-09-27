@@ -2,23 +2,23 @@
 source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
- TUI KANBAN   Snapshot Board╭ Task details ────────────────╮
-╭───────────────────────────│Write the README              │
-│ Backlog  3                │                              │
-│╭──────────────────────────│                              │
-││Write the README          │ Backlog  •  00000000         │
-││                          │                              │
-││Cover install, usage, keys│Cover install, usage, keys and│
-││ Backlog  •  updated 1d   │the file format.              │
-│╰──────────────────────────│                              │
-│╭──────────────────────────│                              │
-││Record a demo             │                              │
-││                          │                              │
-││Commit the .tape file too.│                              │
-││ Backlog  •  updated 3d   │                              │
-│╰──────────────────────────│                              │
-│                           │created 2d                    │
-│                           │updated 1d  •  id 00000000    │
-│                           │e edit  •  H/L move           │
-╰───────────────────────────│                              │
- e edit  •  H/L move  •  d d╰──────────────────────────────╯
+╭ Task details ────────────────────────────────────────────╮
+│Write the README                                          │
+│                                                          │
+│                                                          │
+│ Backlog  •  00000000                                     │
+│                                                          │
+│Cover install, usage, keys and the file format.           │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│created 2d                                                │
+│updated 1d  •  id 00000000                                │
+│e edit  •  H/L move  •  d delete  •  Esc close            │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯

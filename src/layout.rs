@@ -6,6 +6,11 @@
 pub const MIN_WIDTH: u16 = 40;
 pub const MIN_HEIGHT: u16 = 12;
 
+/// The narrowest card in the All tasks grid; the grid shows as many cards
+/// per row as fit, up to [`MAX_CARDS_PER_ROW`].
+pub const MIN_CARD_WIDTH: u16 = 30;
+pub const MAX_CARDS_PER_ROW: u16 = 3;
+
 /// Terminals narrower than this hide the column rail.
 pub const REGULAR_MIN_WIDTH: u16 = 76;
 /// Terminals at least this wide show every column side by side.
@@ -43,6 +48,12 @@ impl Breakpoint {
 
     pub fn shows_all_columns(self) -> bool {
         self == Self::Wide
+    }
+
+    /// Whether the detail drawer takes the full width instead of sliding
+    /// in beside the board.
+    pub fn full_width_drawer(self) -> bool {
+        self == Self::Compact
     }
 }
 

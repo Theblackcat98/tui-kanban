@@ -9,7 +9,7 @@ use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{Model, SaveState, Screen, ToastKind};
 use crate::clock::Clock;
 use crate::command::{self, Context};
-use crate::layout;
+use crate::layout::{self, Breakpoint};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::Color;
@@ -38,13 +38,16 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
     .split(area);
     render_header(frame, sections[0], model);
     let content = sections[1];
-    if content.width >= sidebar::WIDTH + 56 {
+    // Worked out once per frame, from the same terminal width the key
+    // handlers use, so what is drawn and what keys do always agree.
+    let breakpoint = Breakpoint::from_width(area.width);
+    if breakpoint.shows_rail() {
         let columns = Layout::horizontal([Constraint::Length(sidebar::WIDTH), Constraint::Min(1)])
             .split(content);
         sidebar::render(frame, columns[0], model);
-        dashboard::render(frame, columns[1], model, clock);
+        dashboard::render(frame, columns[1], model, breakpoint, clock);
     } else {
-        dashboard::render(frame, content, model, clock);
+        dashboard::render(frame, content, model, breakpoint, clock);
     }
     render_footer(frame, sections[2], model, clock);
 
@@ -54,7 +57,7 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
         match screen {
             Screen::Editor(editor) => task_editor::render(frame, area, model, editor, clock),
             Screen::Detail { task, scroll } => {
-                detail::render(frame, area, model, *task, *scroll, clock)
+                detail::render(frame, area, model, *task, *scroll, breakpoint, clock)
             }
             Screen::Help { scroll } => help::render(frame, area, model, *scroll, clock),
             Screen::ConfirmDelete { task } => {

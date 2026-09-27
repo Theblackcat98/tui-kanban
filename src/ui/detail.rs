@@ -5,6 +5,7 @@ use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::Model;
 use crate::clock::Clock;
 use crate::command::Context;
+use crate::layout::Breakpoint;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -17,9 +18,10 @@ pub(crate) fn render(
     model: &Model,
     task_id: uuid::Uuid,
     scroll: u16,
+    breakpoint: Breakpoint,
     clock: Clock,
 ) {
-    let full_width = if area.width < 56 {
+    let full_width = if breakpoint.full_width_drawer() {
         area.width
     } else {
         (area.width * 2 / 5).clamp(32, 58)

@@ -2,17 +2,22 @@ use super::muted_style;
 use super::{cards, text_style, truncate_text};
 use crate::app::{Model, ViewMode};
 use crate::clock::Clock;
+use crate::layout::{self, Breakpoint};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 
-const ALL_TASK_MIN_CARD_WIDTH: u16 = 30;
-const ALL_TASK_MAX_CARD_COLUMNS: u16 = 3;
 const CARD_GAP: u16 = 1;
 
-pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
+pub(crate) fn render(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    breakpoint: Breakpoint,
+    clock: Clock,
+) {
     if model.board.columns.is_empty() {
         frame.render_widget(
             Paragraph::new("This board has no columns.")
@@ -24,13 +29,19 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Cl
     }
 
     match model.ui.view {
-        ViewMode::Board => render_board(frame, area, model, clock),
+        ViewMode::Board => render_board(frame, area, model, breakpoint, clock),
         ViewMode::AllTasks => render_all_tasks(frame, area, model, clock),
     }
 }
 
-fn render_board(frame: &mut Frame<'_>, area: Rect, model: &Model, clock: Clock) {
-    if area.width < 90 {
+fn render_board(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    model: &Model,
+    breakpoint: Breakpoint,
+    clock: Clock,
+) {
+    if !breakpoint.shows_all_columns() {
         render_column(frame, area, model, model.ui.active_column, clock);
         return;
     }
@@ -336,6 +347,6 @@ fn selected_line(sections: &[AllTaskSection], model: &Model, per_row: u16) -> Op
 
 fn all_task_card_columns(width: u16) -> u16 {
     let width = width.max(1);
-    let columns = (width + CARD_GAP) / (ALL_TASK_MIN_CARD_WIDTH + CARD_GAP);
-    columns.clamp(1, ALL_TASK_MAX_CARD_COLUMNS)
+    let columns = (width + CARD_GAP) / (layout::MIN_CARD_WIDTH + CARD_GAP);
+    columns.clamp(1, layout::MAX_CARDS_PER_ROW)
 }
