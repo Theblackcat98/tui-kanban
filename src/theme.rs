@@ -73,6 +73,25 @@ const ROLES: [&str; 14] = [
     "info",
 ];
 
+/// The accent colours offered for columns, by Catppuccin colour name, in
+/// the order of the colour wheel.
+const ACCENT_NAMES: [&str; 14] = [
+    "rosewater",
+    "flamingo",
+    "pink",
+    "mauve",
+    "red",
+    "maroon",
+    "peach",
+    "yellow",
+    "green",
+    "teal",
+    "sky",
+    "sapphire",
+    "blue",
+    "lavender",
+];
+
 /// Lane accents, by Catppuccin colour name.
 const LANE_NAMES: [&str; 12] = [
     "sapphire",
@@ -343,6 +362,15 @@ impl Theme {
             .iter()
             .find(|(candidate, _)| *candidate == name)
             .map(|(_, color)| *color)
+    }
+
+    /// The accent colours a column can be given by name, as offered by
+    /// the colour menu: those of the Catppuccin accents this theme knows.
+    pub fn accent_names(&self) -> Vec<&'static str> {
+        ACCENT_NAMES
+            .into_iter()
+            .filter(|name| self.color(name).is_some())
+            .collect()
     }
 
     /// The accent for the lane at `index`, cycling through [`Theme::lanes`].

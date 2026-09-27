@@ -144,38 +144,94 @@ pub(crate) fn split_evenly(width: u16, count: u16, gap: u16) -> Vec<(u16, u16)> 
         .collect()
 }
 
-/// The lanes shown in the Board view, as (column index, area).
+/// The lanes shown in the Board view, as (column index, area). Collapsed
+/// lanes are narrow strips; the others share the rest of the width.
 pub(crate) fn lanes(model: &Model, page: &Page) -> Vec<(usize, Rect)> {
     let area = content(page.main);
     let range = lane_range(model, page);
-    split_evenly(area.width, range.len() as u16, LANE_GUTTER)
+    if !page.breakpoint.shows_several_lanes() {
+        return range.map(|column| (column, area)).collect();
+    }
+    let collapsed = |column: usize| model.board.columns[column].collapsed;
+    let strips = range.clone().filter(|column| collapsed(*column)).count() as u16;
+    let expanded = range.len() as u16 - strips;
+    let fixed = strips * layout::COLLAPSED_LANE_WIDTH
+        + LANE_GUTTER * (range.len() as u16).saturating_sub(1);
+    let free = area.width.saturating_sub(fixed);
+    let mut widths = split_evenly(free, expanded, 0)
         .into_iter()
-        .zip(range)
-        .map(|((x, width), column)| (column, Rect::new(area.x + x, area.y, width, area.height)))
+        .map(|(_, width)| width);
+    let mut x = area.x;
+    range
+        .map(|column| {
+            let width = if collapsed(column) {
+                layout::COLLAPSED_LANE_WIDTH
+            } else {
+                widths.next().unwrap_or(0)
+            };
+            let lane = Rect::new(
+                x,
+                area.y,
+                width.min(area.right().saturating_sub(x)),
+                area.height,
+            );
+            x = x.saturating_add(width + LANE_GUTTER);
+            (column, lane)
+        })
         .collect()
 }
 
-/// The columns shown as lanes: as many as fit at [`layout::LANE_MIN_WIDTH`] or
-/// wider (one at the Compact breakpoint), starting from the remembered
-/// first lane and scrolled sideways just enough to show the active one.
+/// The narrowest a lane can be: a strip if it is collapsed.
+fn lane_min_width(model: &Model, column: usize) -> u32 {
+    u32::from(if model.board.columns[column].collapsed {
+        layout::COLLAPSED_LANE_WIDTH
+    } else {
+        layout::LANE_MIN_WIDTH
+    })
+}
+
+/// The columns shown as lanes: as many as fit at [`layout::LANE_MIN_WIDTH`]
+/// or wider (or as strips, when collapsed; one lane at the Compact
+/// breakpoint), starting from the remembered first lane and scrolled
+/// sideways just enough to show the active one.
 pub(crate) fn lane_range(model: &Model, page: &Page) -> std::ops::Range<usize> {
     let columns = model.board.columns.len();
     if columns == 0 {
         return 0..0;
     }
-    let count = if page.breakpoint.shows_several_lanes() {
-        layout::lanes_that_fit(content(page.main).width).min(columns)
-    } else {
-        1
-    };
     let active = model.ui.active_column.min(columns - 1);
-    let mut first = model.ui.scroll.first_lane.min(columns - count);
-    if active < first {
-        first = active;
-    } else if active >= first + count {
-        first = active + 1 - count;
+    if !page.breakpoint.shows_several_lanes() {
+        return active..active + 1;
     }
-    first..first + count
+    let width = u32::from(content(page.main).width);
+    let fits = |range: std::ops::Range<usize>| {
+        let lanes = range.len() as u32;
+        lanes <= 1
+            || range
+                .map(|column| lane_min_width(model, column))
+                .sum::<u32>()
+                + u32::from(LANE_GUTTER) * (lanes - 1)
+                <= width
+    };
+    let mut first = model.ui.scroll.first_lane.min(columns - 1).min(active);
+    let mut end = first + 1;
+    while end < columns && fits(first..end + 1) {
+        end += 1;
+    }
+    if active >= end {
+        (first, end) = (active, active + 1);
+        while first > 0 && fits(first - 1..end) {
+            first -= 1;
+        }
+    }
+    // Use any room left over, rather than leave it empty.
+    while end < columns && fits(first..end + 1) {
+        end += 1;
+    }
+    while first > 0 && fits(first - 1..end) {
+        first -= 1;
+    }
+    first..end
 }
 
 /// The row above the lanes, where "‹ N more" and "N more ›" go.

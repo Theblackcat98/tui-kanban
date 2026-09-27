@@ -36,10 +36,18 @@ pub enum Context {
     Conflict = 1 << 13,
     /// "Quit without saving?"
     ConfirmQuit = 1 << 14,
+    /// A prompt for a column's name or work-in-progress limit.
+    Prompt = 1 << 15,
+    /// "Delete column?"
+    DeleteColumn = 1 << 16,
+    /// The colour menu for a column.
+    Colors = 1 << 17,
+    /// Moving a task into a column at its work-in-progress limit.
+    ConfirmWip = 1 << 18,
 }
 
 impl Context {
-    pub const ALL: [Context; 15] = [
+    pub const ALL: [Context; 19] = [
         Context::Board,
         Context::AllTasks,
         Context::Rail,
@@ -55,6 +63,10 @@ impl Context {
         Context::Palette,
         Context::Conflict,
         Context::ConfirmQuit,
+        Context::Prompt,
+        Context::DeleteColumn,
+        Context::Colors,
+        Context::ConfirmWip,
     ];
 
     /// The name shown in the status line's mode pill and help's title.
@@ -75,6 +87,10 @@ impl Context {
             Self::Palette => "COMMAND",
             Self::Conflict => "CONFLICT",
             Self::ConfirmQuit => "QUIT",
+            Self::Prompt => "COLUMN",
+            Self::DeleteColumn => "DELETE",
+            Self::Colors => "COLOUR",
+            Self::ConfirmWip => "LIMIT",
         }
     }
 
@@ -96,6 +112,10 @@ impl Context {
             Self::Palette => "Command palette",
             Self::Conflict => "Changed on disk",
             Self::ConfirmQuit => "Quit",
+            Self::Prompt => "Column",
+            Self::DeleteColumn => "Delete column",
+            Self::Colors => "Column colour",
+            Self::ConfirmWip => "Work-in-progress limit",
         }
     }
 }
@@ -129,6 +149,7 @@ const UNDO: Contexts = Contexts::of(&[
     Context::Detail,
 ]);
 const TASK_ACTIONS: Contexts = Contexts::of(&[Context::Board, Context::AllTasks, Context::Detail]);
+const MENUS: Contexts = Contexts::of(&[Context::MoveTo, Context::Colors]);
 
 const fn only(context: Context) -> Contexts {
     Contexts(context as u32)
@@ -154,15 +175,17 @@ const DIGITS: [Key; 9] = [
 pub enum Group {
     Navigation,
     Tasks,
+    Columns,
     Details,
     Editing,
     General,
 }
 
 impl Group {
-    pub const ALL: [Group; 5] = [
+    pub const ALL: [Group; 6] = [
         Group::Navigation,
         Group::Tasks,
+        Group::Columns,
         Group::Details,
         Group::Editing,
         Group::General,
@@ -172,6 +195,7 @@ impl Group {
         match self {
             Self::Navigation => "Navigation",
             Self::Tasks => "Tasks",
+            Self::Columns => "Columns",
             Self::Details => "Details",
             Self::Editing => "Editor, search and dialogs",
             Self::General => "General",
@@ -219,6 +243,14 @@ pub enum CommandId {
     DeleteTask,
     MoveTaskLeft,
     MoveTaskRight,
+    AddColumn,
+    RenameColumn,
+    DeleteColumn,
+    MoveColumnUp,
+    MoveColumnDown,
+    ColumnColor,
+    WipLimit,
+    ToggleCollapse,
     Undo,
     Redo,
     Search,
@@ -250,6 +282,15 @@ pub enum CommandId {
     CloseMenu,
     AddQuickTask,
     CloseQuickAdd,
+    PromptSave,
+    PromptCancel,
+    ConfirmDeleteColumn,
+    TasksToPrevious,
+    TasksToNext,
+    CancelDeleteColumn,
+    PickColor,
+    MoveAnyway,
+    CancelMove,
     HelpScrollUp,
     HelpScrollDown,
     CloseHelp,
@@ -717,7 +758,7 @@ pub const COMMANDS: &[Command] = &[
         &[ch('a')],
         "quick add to this lane",
         G::Tasks,
-        DASHBOARD,
+        CARDS,
     ),
     Command::new(C::EditTask, &[ch('e')], "edit task", G::Tasks, TASK_ACTIONS).hint(7, "edit"),
     Command::new(
@@ -773,6 +814,70 @@ pub const COMMANDS: &[Command] = &[
         "move task up",
         G::Tasks,
         TASK_ACTIONS,
+    ),
+    // Columns
+    Command::new(
+        C::AddColumn,
+        &[ch('a')],
+        "add a column",
+        G::Columns,
+        only(Context::Rail),
+    )
+    .hint(5, "add column"),
+    Command::new(
+        C::RenameColumn,
+        &[ch('r')],
+        "rename column",
+        G::Columns,
+        only(Context::Rail),
+    )
+    .hint(6, "rename"),
+    Command::new(
+        C::DeleteColumn,
+        &[ch('d')],
+        "delete column",
+        G::Columns,
+        only(Context::Rail),
+    )
+    .hint(9, "delete"),
+    Command::new(
+        C::MoveColumnDown,
+        &[ch('J')],
+        "move column down",
+        G::Columns,
+        only(Context::Rail),
+    )
+    .hint(7, "move")
+    .pair(C::MoveColumnUp, "move column down / up"),
+    Command::new(
+        C::MoveColumnUp,
+        &[ch('K')],
+        "move column up",
+        G::Columns,
+        only(Context::Rail),
+    ),
+    Command::new(
+        C::ColumnColor,
+        &[ch('c')],
+        "column colour",
+        G::Columns,
+        only(Context::Rail),
+    )
+    .hint(8, "colour"),
+    Command::new(
+        C::WipLimit,
+        &[ch('w')],
+        "work-in-progress limit",
+        G::Columns,
+        only(Context::Rail),
+    )
+    .hint(8, "limit"),
+    Command::new(
+        C::ToggleCollapse,
+        &[ch('z')],
+        "collapse / expand lane",
+        G::Columns,
+        Contexts::of(&[Context::Board, Context::Rail]),
     ),
     Command::new(C::Undo, &[ch('u'), ctrl('z')], "undo", G::Tasks, UNDO)
         .pair(C::Redo, "undo / redo"),
@@ -1036,7 +1141,7 @@ pub const COMMANDS: &[Command] = &[
         &[ch('j'), key(KeyCode::Down)],
         "menu: next",
         G::Editing,
-        only(Context::MoveTo),
+        MENUS,
     )
     .hint(2, "choose")
     .pair(C::MenuUp, "menu: next / previous"),
@@ -1045,7 +1150,7 @@ pub const COMMANDS: &[Command] = &[
         &[ch('k'), key(KeyCode::Up)],
         "menu: previous",
         G::Editing,
-        only(Context::MoveTo),
+        MENUS,
     ),
     Command::new(
         C::MenuPick,
@@ -1060,9 +1165,81 @@ pub const COMMANDS: &[Command] = &[
         &[key(KeyCode::Esc), ch('q')],
         "menu: close",
         G::Editing,
-        only(Context::MoveTo),
+        MENUS,
     )
     .hint(3, "cancel"),
+    Command::new(
+        C::PickColor,
+        &[key(KeyCode::Enter)],
+        "colour: set",
+        G::Editing,
+        only(Context::Colors),
+    )
+    .hint(1, "pick"),
+    Command::new(
+        C::PromptSave,
+        &[key(KeyCode::Enter)],
+        "column: save",
+        G::Editing,
+        only(Context::Prompt),
+    )
+    .hint(1, "save"),
+    Command::new(
+        C::PromptCancel,
+        &[key(KeyCode::Esc), ctrl('c')],
+        "column: cancel",
+        G::Editing,
+        only(Context::Prompt),
+    )
+    .hint(2, "cancel"),
+    Command::new(
+        C::ConfirmDeleteColumn,
+        &[ch('y')],
+        "delete column: confirm",
+        G::Editing,
+        only(Context::DeleteColumn),
+    )
+    .hint(1, "delete"),
+    Command::new(
+        C::TasksToPrevious,
+        &[ch('h'), key(KeyCode::Left)],
+        "delete column: previous place for its tasks",
+        G::Editing,
+        only(Context::DeleteColumn),
+    )
+    .hint(2, "tasks go to")
+    .pair(C::TasksToNext, "delete column: where its tasks go"),
+    Command::new(
+        C::TasksToNext,
+        &[ch('l'), key(KeyCode::Right)],
+        "delete column: next place for its tasks",
+        G::Editing,
+        only(Context::DeleteColumn),
+    ),
+    Command::new(
+        C::CancelDeleteColumn,
+        &[ch('n'), key(KeyCode::Esc), ch('q')],
+        "delete column: cancel",
+        G::Editing,
+        only(Context::DeleteColumn),
+    )
+    .hint(3, "cancel"),
+    Command::new(
+        C::MoveAnyway,
+        &[ch('y')],
+        "limit: move anyway",
+        G::Editing,
+        only(Context::ConfirmWip),
+    )
+    .hint(1, "move anyway"),
+    Command::new(
+        C::CancelMove,
+        &[ch('n'), key(KeyCode::Esc), ch('q')],
+        "limit: don't move",
+        G::Editing,
+        only(Context::ConfirmWip),
+    )
+    .hint(2, "cancel"),
     Command::new(
         C::AddQuickTask,
         &[key(KeyCode::Enter)],
@@ -1150,7 +1327,12 @@ pub const COMMANDS: &[Command] = &[
         "quit (anywhere)",
         G::General,
         // Ctrl+C cancels typing rather than losing it.
-        except(&[Context::QuickAdd, Context::Editor, Context::Palette]),
+        except(&[
+            Context::QuickAdd,
+            Context::Editor,
+            Context::Palette,
+            Context::Prompt,
+        ]),
     ),
 ];
 
@@ -1264,6 +1446,7 @@ mod tests {
                 Context::QuickAdd => C::CloseQuickAdd,
                 Context::Editor => C::CancelEdit,
                 Context::Palette => C::PaletteClose,
+                Context::Prompt => C::PromptCancel,
                 _ => C::ForceQuit,
             };
             assert_eq!(lookup(context, &ctrl_c), Some(expected));

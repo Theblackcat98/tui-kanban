@@ -122,7 +122,7 @@ pub fn keymap(model: &Model, key: KeyEvent) -> Option<Action> {
     match context {
         Context::Search | Context::Editor => Some(Action::Edit(key)),
         Context::Help => Some(Action::DismissHelp),
-        Context::QuickAdd | Context::Palette => Some(Action::Edit(key)),
+        Context::QuickAdd | Context::Palette | Context::Prompt => Some(Action::Edit(key)),
         _ => None,
     }
 }

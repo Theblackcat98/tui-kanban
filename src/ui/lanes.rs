@@ -17,7 +17,9 @@ use super::text::{self, truncate_text};
 use super::{blend_color, card, faint, fg, muted, put};
 use crate::app::{FocusRegion, Model};
 use crate::clock::Clock;
+use crate::domain::Wip;
 use crate::layout::CARD_GAP;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) fn render(frame: &mut Frame<'_>, page: &Page, model: &Model, clock: Clock) {
     if model.board.columns.is_empty() {
@@ -35,6 +37,10 @@ pub(crate) fn render(frame: &mut Frame<'_>, page: &Page, model: &Model, clock: C
     // also names the other columns.
     let tabs = !page.breakpoint.shows_several_lanes();
     for (column, area) in geometry::lanes(model, page) {
+        if !tabs && model.board.columns[column].collapsed {
+            render_strip(frame, area, model, column);
+            continue;
+        }
         render_lane(frame, area, model, column, !tabs, clock);
         if tabs {
             render_tabs(frame, lane_parts(area).header, model);
@@ -101,7 +107,7 @@ fn render_tabs(frame: &mut Frame<'_>, row: Rect, model: &Model) {
             spans.push(Span::styled(format!("{name} {count}"), style));
         } else {
             spans.push(Span::styled(name.clone(), muted(model)));
-            spans.push(Span::styled(format!(" {count}"), faint(model)));
+            spans.push(Span::styled(format!(" {count}"), count_style(model, index)));
         }
     }
     if end < tabs.len() {
@@ -166,13 +172,35 @@ fn tab_window(tabs: &[(String, String)], active: usize, width: usize) -> (usize,
     }
 }
 
-/// A column's task count, as "3", or "2/5" while filtering.
+/// A column's task count: "3", "3/4" against a work-in-progress limit of
+/// 4, or "2/5" (matches of all) while filtering.
 pub(crate) fn count_label(model: &Model, column: usize) -> String {
-    let total = model.board.columns[column].tasks.len();
-    if model.ui.search.query.is_empty() {
-        total.to_string()
+    let data = &model.board.columns[column];
+    let total = data.tasks.len();
+    if !model.ui.search.query.is_empty() {
+        format!("{}/{total}", model.matching_count(column))
+    } else if let Some(limit) = data.limit() {
+        format!("{total}/{limit}")
     } else {
-        format!("{}/{total}", model.visible_task_indices(column).len())
+        total.to_string()
+    }
+}
+
+/// How a count is drawn: faint, or `warning` once the column is at its
+/// work-in-progress limit and `danger` past it (bold and reversed without
+/// colour).
+pub(crate) fn count_style(model: &Model, column: usize) -> Style {
+    let theme = &model.ui.theme;
+    let wip = model.board.columns[column].wip();
+    match wip {
+        Wip::Under => faint(model),
+        _ if theme.is_monochrome() => Style::default().add_modifier(if wip == Wip::Over {
+            Modifier::BOLD | Modifier::REVERSED
+        } else {
+            Modifier::BOLD
+        }),
+        Wip::Full => fg(theme.warning).add_modifier(Modifier::BOLD),
+        Wip::Over => fg(theme.danger).add_modifier(Modifier::BOLD),
     }
 }
 
@@ -196,7 +224,7 @@ pub(crate) fn header_line(
             truncate_text(&model.board.columns[column].name, name_room),
             name_style.add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("  {count}"), faint(model)),
+        Span::styled(format!("  {count}"), count_style(model, column)),
     ])
 }
 
@@ -247,7 +275,7 @@ fn render_lane(
 
     let visible = model.visible_task_indices(column);
     if visible.is_empty() {
-        render_empty(frame, &parts, model, focused);
+        render_empty(frame, &parts, model, column, focused);
         return;
     }
     let heights = lane_heights(model, column, area.width);
@@ -287,14 +315,83 @@ pub(crate) fn more(frame: &mut Frame<'_>, area: Rect, model: &Model, arrow: &str
     }
 }
 
-fn render_empty(frame: &mut Frame<'_>, parts: &LaneParts, model: &Model, focused: bool) {
+/// A collapsed lane, as a strip: its count, its underline, and its name
+/// written downwards.
+///
+/// ```text
+///  5
+/// ▔▔▔
+///
+///  D
+///  o
+///  n
+///  e
+/// ```
+fn render_strip(frame: &mut Frame<'_>, area: Rect, model: &Model, column: usize) {
+    let parts = lane_parts(area);
+    let focused = model.ui.focus == FocusRegion::Cards && model.ui.active_column == column;
+    let data = &model.board.columns[column];
+    let count = data.tasks.len().to_string();
+    let count_width = text::width(&count) as u16;
+    put(
+        frame,
+        area.x + area.width.saturating_sub(count_width) / 2,
+        parts.header.y,
+        area.width,
+        Line::from(Span::styled(count, count_style(model, column))),
+    );
+    if parts.underline.height > 0 {
+        put(
+            frame,
+            area.x,
+            parts.underline.y,
+            area.width,
+            underline(model, column, focused, area.width),
+        );
+    }
+    let theme = &model.ui.theme;
+    let style = if focused {
+        fg(theme.text).add_modifier(Modifier::BOLD)
+    } else {
+        muted(model)
+    };
+    let rows = parts.cards.height as usize;
+    let letters: Vec<&str> = data.name.graphemes(true).collect();
+    let cut = letters.len() > rows;
+    for (row, letter) in letters.iter().take(rows).enumerate() {
+        let letter = if cut && row + 1 == rows {
+            "…"
+        } else {
+            letter
+        };
+        put(
+            frame,
+            area.x + 1,
+            parts.cards.y + row as u16,
+            area.width.saturating_sub(1),
+            Line::from(Span::styled(letter.to_owned(), style)),
+        );
+    }
+}
+
+fn render_empty(
+    frame: &mut Frame<'_>,
+    parts: &LaneParts,
+    model: &Model,
+    column: usize,
+    focused: bool,
+) {
     let filtering = !model.ui.search.query.is_empty();
-    let mut lines = vec![if filtering {
+    let mut lines = vec![if model.lane_hidden(column) {
+        "Collapsed"
+    } else if filtering {
         "No matches"
     } else {
         "No tasks yet"
     }];
-    if focused && !filtering {
+    if model.lane_hidden(column) {
+        lines.push("z to expand");
+    } else if focused && !filtering {
         lines.extend(["n to add one", "? for all keys"]);
     }
     let area = parts.cards;

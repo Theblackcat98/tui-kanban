@@ -23,8 +23,8 @@ expression: "harness.screen(100, 30)"
               │   Move task down                                                  J  │
               │   Move task up                                                    K  │
               │   Search                                                          /  │
+              │   Collapse / expand lane                                          z  │
               │   Previous column                                                 h  │
-              │   Next column                                                     l  │
               │                                                                      │
               │  Enter run   ↓/↑ choose   Esc close                                  │
               ╰──────────────────────────────────────────────────────────────────────╯

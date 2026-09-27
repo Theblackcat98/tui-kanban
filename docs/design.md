@@ -128,12 +128,22 @@ Backlog  3
 ```
 
 - Header: the name (bold; `text` when focused, `text_muted` otherwise)
-  and the task count in `text_faint` (`2/5` while filtering).
+  and the task count in `text_faint` (`2/5` while filtering). A column
+  with a work-in-progress limit counts against it (`3/4`); the count
+  turns `warning` at the limit and `danger` past it (bold, and bold
+  reversed, without colour). The rail and the tab strip colour their
+  counts the same way.
 - Underline: `▔` across the lane in the lane's accent, dimmed unless the
   lane is focused.
 - Cards scroll by whole cards, never partially. `↑ 2 more` / `↓ 3 more`
   show what is hidden. Each lane remembers its own scroll position.
 - Empty: `No tasks yet`, plus `n to add one` in the focused lane.
+- **Collapsed** (`z`): the lane is a three-cell strip with its count,
+  its underline and its name written downwards. Its cards are hidden in
+  the Board view, so they can't be selected or matched by a search; h/l
+  still stop on it, and `z` expands it again. All tasks shows every
+  column. At the Compact breakpoint a collapsed lane says `Collapsed ·
+  z to expand`.
 - At the Compact breakpoint the header is a tab strip instead:
   `‹ Backlog 3 · In Progress 2 · Done 5 ›`, with the active column in
   its lane colour and arrows when columns are off-screen.
@@ -157,6 +167,21 @@ Backlog  3
 The column list on `panel`. The active column has a `▌` marker in its
 lane colour; the count is right-aligned with a gap. When the rail has
 focus, the active entry is on `selection`.
+
+Columns are managed from the rail, and every change can be undone:
+
+| Key | |
+|---|---|
+| `a` | Add a column after the active one (a one-line prompt) |
+| `r` | Rename the column; its id, and so its colour, stays |
+| `d` | Delete the column. The dialog says where its tasks go, the column before it at first: h/l choose another column, or deleting them too |
+| `J` / `K` | Move the column down / up (right / left on the board) |
+| `c` | Pick its colour from a menu of the theme's accents, or "Automatic" |
+| `w` | Set its work-in-progress limit; empty or 0 removes it |
+| `z` | Collapse or expand its lane (in the Board view too) |
+
+Moving a task into a column that is already at its limit (with H/L,
+the "move to…" menu or the mouse) asks first: `y` moves it anyway.
 
 ### Detail drawer
 

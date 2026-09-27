@@ -23,8 +23,8 @@ pub use editor::{EditorField, EditorState, Placement};
 pub use history::History;
 pub use input::TextInput;
 pub use model::{
-    FocusRegion, Model, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind, Ui, ViewMode,
-    VisibleTask,
+    FocusRegion, Model, PromptKind, SaveState, Screen, Scroll, Search, Session, Toast, ToastKind,
+    Ui, ViewMode, VisibleTask,
 };
 pub use palette::{
     Entry as PaletteEntry, Palette, Target as PaletteTarget, entries as palette_entries,
@@ -1588,6 +1588,216 @@ mod tests {
         app.handle_key(key(KeyCode::Char('g')), clock);
         let timeout = app.next_timeout(clock.instant);
         assert!(timeout <= crate::ui::WHICH_KEY_DELAY && timeout > Duration::ZERO);
+    }
+
+    fn column_names(app: &App) -> Vec<&str> {
+        app.model
+            .board
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn columns_are_managed_from_the_rail() {
+        let (_directory, mut app) = test_app();
+        // a adds a column after the active one, and focuses it.
+        press(&mut app, &[KeyCode::Tab, KeyCode::Char('a')]);
+        type_text(&mut app, "Review");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(
+            column_names(&app),
+            ["Backlog", "Review", "In Progress", "Done"]
+        );
+        assert_eq!(app.model.ui.active_column, 1);
+        assert_eq!(app.model.ui.focus, FocusRegion::Rail);
+        // An empty name is refused, and the prompt stays open.
+        press(&mut app, &[KeyCode::Char('a'), KeyCode::Enter]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Prompt { error: Some(_), .. })
+        ));
+        press(&mut app, &[KeyCode::Esc]);
+        // r renames, keeping the id.
+        press(&mut app, &[KeyCode::Char('r')]);
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        type_text(&mut app, "Code review");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[1].name, "Code review");
+        assert_eq!(app.model.board.columns[1].id, "review");
+        // J and K reorder, and the column stays active.
+        press(&mut app, &[KeyCode::Char('J')]);
+        assert_eq!(
+            column_names(&app),
+            ["Backlog", "In Progress", "Code review", "Done"]
+        );
+        assert_eq!(app.model.ui.active_column, 2);
+        press(&mut app, &[KeyCode::Char('K'), KeyCode::Char('K')]);
+        assert_eq!(column_names(&app)[0], "Code review");
+        // Every change can be undone.
+        press(&mut app, &[KeyCode::Char('u'), KeyCode::Char('u')]);
+        assert_eq!(column_names(&app)[2], "Code review");
+        app.flush(clock());
+        assert_eq!(app.store().load().unwrap().unwrap(), app.model.board);
+    }
+
+    #[test]
+    fn deleting_a_column_moves_its_tasks_or_deletes_them() {
+        let (_directory, mut app) = test_app();
+        let task = add(&mut app, 1, "In flight");
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('d')],
+        );
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::DeleteColumn {
+                column: 1,
+                tasks_to: Some(0)
+            })
+        ));
+        // l steps to the next column, then to deleting the tasks, then
+        // wraps around.
+        press(&mut app, &[KeyCode::Char('l')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::DeleteColumn {
+                tasks_to: Some(2),
+                ..
+            })
+        ));
+        press(&mut app, &[KeyCode::Char('l')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::DeleteColumn { tasks_to: None, .. })
+        ));
+        press(&mut app, &[KeyCode::Char('h'), KeyCode::Char('y')]);
+        assert_eq!(column_names(&app), ["Backlog", "Done"]);
+        assert_eq!(app.model.board.task_location(task), Some((1, 0)));
+        assert_eq!(app.model.ui.active_column, 1);
+        assert_eq!(
+            toast_message(&app),
+            "Deleted In Progress, its tasks moved to Done · u to undo"
+        );
+        press(&mut app, &[KeyCode::Char('u')]);
+        assert_eq!(column_names(&app), ["Backlog", "In Progress", "Done"]);
+        assert_eq!(app.model.board.task_location(task), Some((1, 0)));
+        // The last column can't be deleted.
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('l')]);
+        press(&mut app, &[KeyCode::Char('l'), KeyCode::Char('y')]);
+        press(&mut app, &[KeyCode::Char('d'), KeyCode::Char('y')]);
+        assert_eq!(app.model.board.columns.len(), 1);
+        assert!(app.model.board.task(task).is_none());
+        press(&mut app, &[KeyCode::Char('d')]);
+        assert!(app.model.ui.screens.is_empty());
+    }
+
+    #[test]
+    fn a_column_colour_can_be_picked_or_left_automatic() {
+        let (_directory, mut app) = test_app();
+        press(&mut app, &[KeyCode::Tab, KeyCode::Char('c')]);
+        let names = app.model.ui.theme.accent_names();
+        // The current colour, sapphire, is highlighted.
+        let sapphire = names.iter().position(|name| *name == "sapphire").unwrap();
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Colors { selected, .. }) if *selected == sapphire + 1
+        ));
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Enter]);
+        assert_eq!(
+            app.model.board.columns[0].color.as_deref(),
+            Some(names[sapphire + 1])
+        );
+        press(&mut app, &[KeyCode::Char('c'), KeyCode::Home]);
+        // Home isn't a menu key; go to the top with k instead.
+        press(&mut app, &[KeyCode::Char('k'); 20]);
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[0].color, None);
+    }
+
+    #[test]
+    fn a_full_column_asks_before_taking_another_task() {
+        let (_directory, mut app) = test_app();
+        let first = add(&mut app, 0, "First");
+        let second = add(&mut app, 0, "Second");
+        add(&mut app, 1, "Busy");
+        // w sets a limit of 1 on In Progress, which is now full.
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('w')],
+        );
+        type_text(&mut app, "x");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Prompt { error: Some(_), .. })
+        ));
+        press(&mut app, &[KeyCode::Backspace]);
+        type_text(&mut app, "1");
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[1].wip_limit, Some(1));
+        // Moving a task in asks; n leaves it where it was.
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('h'), KeyCode::Char('L')],
+        );
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmWip { .. })));
+        press(&mut app, &[KeyCode::Char('n')]);
+        assert_eq!(app.model.board.task_location(first), Some((0, 0)));
+        // y moves it anyway.
+        press(&mut app, &[KeyCode::Char('L'), KeyCode::Char('y')]);
+        assert_eq!(app.model.board.task_location(first), Some((1, 1)));
+        assert_eq!(app.model.board.columns[1].wip(), crate::domain::Wip::Over);
+        // So does the move-to menu.
+        press(
+            &mut app,
+            &[KeyCode::Char('h'), KeyCode::Char('m'), KeyCode::Char('2')],
+        );
+        assert!(matches!(top_screen(&app), Some(Screen::ConfirmWip { .. })));
+        press(&mut app, &[KeyCode::Esc]);
+        assert_eq!(app.model.board.task_location(second), Some((0, 0)));
+        // An empty answer removes the limit.
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('w')],
+        );
+        app.handle_key(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            clock(),
+        );
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.model.board.columns[1].wip_limit, None);
+    }
+
+    #[test]
+    fn a_collapsed_lane_hides_its_cards_in_the_board_view() {
+        let (_directory, mut app) = test_app();
+        add(&mut app, 0, "Todo");
+        let done = add(&mut app, 2, "Shipped");
+        press(&mut app, &[KeyCode::Char('3')]);
+        assert_eq!(app.model.selected_task_id(), Some(done));
+        press(&mut app, &[KeyCode::Char('z')]);
+        assert!(app.model.board.columns[2].collapsed);
+        assert_eq!(app.model.selected_task_id(), None);
+        assert_eq!(app.model.ui.active_column, 2);
+        // Its tasks don't match searches, and h / l still reach it.
+        press(&mut app, &[KeyCode::Char('h'), KeyCode::Char('l')]);
+        assert_eq!(app.model.ui.active_column, 2);
+        assert!(app.model.visible_task_indices(2).is_empty());
+        // All tasks shows every column.
+        press(&mut app, &[KeyCode::Char('v')]);
+        assert_eq!(app.model.visible_task_indices(2), vec![0]);
+        press(&mut app, &[KeyCode::Char('v')]);
+        // Going to one of its tasks from the palette expands it.
+        press(&mut app, &[KeyCode::Char('1'), KeyCode::Char(':')]);
+        type_text(&mut app, "shipped");
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(!app.model.board.columns[2].collapsed);
+        assert_eq!(app.model.selected_task_id(), Some(done));
     }
 
     #[test]

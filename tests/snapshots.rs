@@ -642,3 +642,45 @@ fn which_key_panels() {
         buffer_text(terminal.backend().buffer())
     );
 }
+
+// Columns (#52)
+
+fn board_with_limits() -> Board {
+    let mut board = typical_board();
+    board.columns[1].wip_limit = Some(2);
+    board.columns[2].wip_limit = Some(1);
+    board.columns[2].collapsed = true;
+    board
+}
+
+#[test]
+fn limits_and_a_collapsed_lane() {
+    let mut harness = Harness::new(board_with_limits());
+    screen_snapshot!("limits_collapsed_100x30", harness, 100, 30);
+    screen_snapshot!("limits_collapsed_160x45", harness, 160, 45);
+    // The collapsed lane, active on a narrow terminal.
+    harness.keys(&[KeyCode::Char('3')]);
+    screen_snapshot!("limits_collapsed_active_60x20", harness, 60, 20);
+}
+
+#[test]
+fn column_dialogs() {
+    let mut harness = Harness::new(board_with_limits());
+    harness.keys(&[KeyCode::Tab, KeyCode::Char('j'), KeyCode::Char('d')]);
+    screen_snapshot!("delete_column_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Esc, KeyCode::Char('c')]);
+    screen_snapshot!("column_colours_100x30", harness, 100, 30);
+    harness.keys(&[KeyCode::Esc, KeyCode::Char('w')]);
+    screen_snapshot!("wip_prompt_100x30", harness, 100, 30);
+    harness
+        .keys(&[KeyCode::Esc, KeyCode::Char('a')])
+        .type_text("Review");
+    screen_snapshot!("add_column_100x30", harness, 100, 30);
+    harness.keys(&[
+        KeyCode::Esc,
+        KeyCode::Tab,
+        KeyCode::Char('h'),
+        KeyCode::Char('L'),
+    ]);
+    screen_snapshot!("wip_confirm_100x30", harness, 100, 30);
+}

@@ -77,6 +77,57 @@ pub enum Screen {
     /// "Quit without saving?", when quitting with changes that couldn't
     /// be saved.
     ConfirmQuit,
+    /// A one-line prompt for a column's name or work-in-progress limit.
+    Prompt {
+        kind: PromptKind,
+        input: TextInput,
+        /// Why the last answer wasn't accepted.
+        error: Option<String>,
+    },
+    /// "Delete column?": `tasks_to` is the column its tasks move to, or
+    /// `None` to delete them with it.
+    DeleteColumn {
+        column: usize,
+        tasks_to: Option<usize>,
+    },
+    /// The colour menu for a column. Entry 0 is "automatic", then
+    /// [`Theme::accent_names`](crate::theme::Theme::accent_names).
+    Colors {
+        column: usize,
+        selected: usize,
+    },
+    /// Moving a task into a column that is at its work-in-progress limit.
+    ConfirmWip {
+        task: Uuid,
+        column: usize,
+        /// Where in the column, as for [`Board::move_task`]; `None` for the
+        /// end.
+        index: Option<usize>,
+    },
+}
+
+/// What a [`Screen::Prompt`] asks for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PromptKind {
+    /// The name of a new column, to go at `at`.
+    AddColumn {
+        at: usize,
+    },
+    RenameColumn {
+        column: usize,
+    },
+    WipLimit {
+        column: usize,
+    },
+}
+
+impl PromptKind {
+    pub fn column(self) -> usize {
+        match self {
+            Self::AddColumn { at } => at,
+            Self::RenameColumn { column } | Self::WipLimit { column } => column,
+        }
+    }
 }
 
 /// A prefix key waiting for the key that completes it: the `g` in `g g`,
@@ -166,6 +217,12 @@ impl Scroll {
             self.lanes.resize(column + 1, 0);
         }
         self.lanes[column] = offset;
+    }
+
+    /// Forgets each lane's position, after columns are added, removed or
+    /// reordered.
+    pub fn reset_lanes(&mut self) {
+        self.lanes.clear();
     }
 }
 
@@ -266,6 +323,10 @@ impl Model {
             Some(Screen::ConfirmDiscard) => Context::Discard,
             Some(Screen::Conflict) => Context::Conflict,
             Some(Screen::ConfirmQuit) => Context::ConfirmQuit,
+            Some(Screen::Prompt { .. }) => Context::Prompt,
+            Some(Screen::DeleteColumn { .. }) => Context::DeleteColumn,
+            Some(Screen::Colors { .. }) => Context::Colors,
+            Some(Screen::ConfirmWip { .. }) => Context::ConfirmWip,
             Some(Screen::Palette(_)) => Context::Palette,
             Some(Screen::ConfirmDelete { .. }) => Context::Confirm,
             Some(Screen::Editor(_)) => Context::Editor,
@@ -299,6 +360,14 @@ impl Model {
                 )
             }
             CommandId::ToggleFocus => self.breakpoint().shows_rail(),
+            CommandId::DeleteColumn | CommandId::MoveColumnUp | CommandId::MoveColumnDown => {
+                self.board.columns.len() > 1
+            }
+            CommandId::TasksToPrevious | CommandId::TasksToNext => matches!(
+                self.ui.screens.last(),
+                Some(Screen::DeleteColumn { column, .. })
+                    if self.board.columns.get(*column).is_some_and(|column| !column.tasks.is_empty())
+            ),
             CommandId::Undo => self.session.history.can_undo(),
             CommandId::Redo => self.session.history.can_redo(),
             CommandId::OpenDetail
@@ -340,6 +409,34 @@ impl Model {
                 .matches(task, &self.board.columns[column])
     }
 
+    /// Whether a column's cards are hidden because its lane is collapsed.
+    /// Only the Board view collapses lanes; All tasks shows every column.
+    pub fn lane_hidden(&self, column: usize) -> bool {
+        self.ui.view == ViewMode::Board
+            && self
+                .board
+                .columns
+                .get(column)
+                .is_some_and(|column| column.collapsed)
+    }
+
+    /// Whether a task is on screen: it matches the search, and its lane
+    /// isn't collapsed.
+    fn shows(&self, column: usize, task: &Task) -> bool {
+        !self.lane_hidden(column) && self.matches(column, task)
+    }
+
+    /// How many of a column's tasks match the search, whether or not its
+    /// lane is collapsed.
+    pub fn matching_count(&self, column: usize) -> usize {
+        self.board.columns.get(column).map_or(0, |data| {
+            data.tasks
+                .iter()
+                .filter(|task| self.matches(column, task))
+                .count()
+        })
+    }
+
     pub fn visible_task_indices(&self, column: usize) -> Vec<usize> {
         self.board
             .columns
@@ -348,7 +445,7 @@ impl Model {
                 data.tasks
                     .iter()
                     .enumerate()
-                    .filter(|(_, task)| self.matches(column, task))
+                    .filter(|(_, task)| self.shows(column, task))
                     .map(|(index, _)| index)
                     .collect()
             })
@@ -365,7 +462,7 @@ impl Model {
                     .tasks
                     .iter()
                     .enumerate()
-                    .filter(move |(_, task)| self.matches(column_index, task))
+                    .filter(move |(_, task)| self.shows(column_index, task))
                     .map(move |(task_index, task)| VisibleTask {
                         column: column_index,
                         task: task_index,
@@ -426,7 +523,7 @@ impl Model {
         self.ui.active_column = self.ui.active_column.min(self.board.columns.len() - 1);
         if let Some(id) = self.ui.selected
             && let Some((column, index)) = self.board.task_location(id)
-            && self.matches(column, &self.board.columns[column].tasks[index])
+            && self.shows(column, &self.board.columns[column].tasks[index])
         {
             self.select_task(id);
             return;

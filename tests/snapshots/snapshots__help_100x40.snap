@@ -31,14 +31,14 @@ expression: "harness.screen(100, 40)"
                        │   Ctrl+N/Ctrl+P       next / previous match        │
                        │   Backspace           remove the last filter term  │
                        │                                                    │
+                       │ Columns                                            │
+                       │   z                   collapse / expand lane       │
+                       │                                                    │
                        │ General                                            │
                        │   ?                   this help                    │
                        │   : / Ctrl+K          command palette              │
                        │   Space               show the keys you can press  │
-                       │   q                   quit                         │
-                       │   Ctrl+C              quit (anywhere)              │
                        │                                                    │
-                       │ j/k scroll   Esc close                             │
+                       │ ↓ more   j/k scroll   Esc close                    │
                        ╰────────────────────────────────────────────────────╯
-
  HELP   ● saved   j/k scroll   Esc close

@@ -281,7 +281,7 @@ mod tests {
     {
       "id": "todo",
       "name": "To do",
-      "wip_limit": 3,
+      "swimlane": 3,
       "tasks": [
         {
           "id": "00000000-0000-4000-8000-000000000001",
@@ -301,7 +301,7 @@ mod tests {
         let store = JsonStore::new(&path);
         let mut board = store.load().unwrap().unwrap();
         assert_eq!(board.extra["owner"], "sam");
-        assert_eq!(board.columns[0].extra["wip_limit"], 3);
+        assert_eq!(board.columns[0].extra["swimlane"], 3);
         let id = board.columns[0].tasks[0].id;
         board.update_task(id, "Kept", "", 5).unwrap();
         board.move_task(id, 0, Some(0), 6).unwrap();
@@ -330,7 +330,7 @@ mod tests {
           ]
         }
       ],
-      "wip_limit": 3
+      "swimlane": 3
     }
   ],
   "owner": "sam"

@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
 
 
 
- RAIL   ● saved   Tab rail   j/k column   Enter focus   v view   n/N new   / search   ? help
+ RAIL   ● saved   Tab rail   j/k column   Enter focus   v view   n/N new   a add column   r rename

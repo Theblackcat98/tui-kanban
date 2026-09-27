@@ -83,6 +83,18 @@ pub fn render(frame: &mut Frame<'_>, model: &Model, clock: Clock) {
             Screen::QuickAdd { column, input } => {
                 prompt::render(frame, area, model, *column, input, clock)
             }
+            Screen::Prompt { kind, input, error } => {
+                prompt::render_column(frame, area, model, *kind, input, error.as_deref(), clock)
+            }
+            Screen::DeleteColumn { column, tasks_to } => {
+                confirm::render_delete_column(frame, area, model, *column, *tasks_to, clock)
+            }
+            Screen::Colors { column, selected } => {
+                menu::render_colors(frame, area, model, *column, *selected, clock)
+            }
+            Screen::ConfirmWip { column, .. } => {
+                confirm::render_wip(frame, area, model, *column, clock)
+            }
         }
     }
 }
