@@ -104,6 +104,12 @@ pub enum CommandId {
     NextColumn,
     PreviousCard,
     NextCard,
+    RowUp,
+    RowDown,
+    CardLeft,
+    CardRight,
+    PreviousGroup,
+    NextGroup,
     PageUp,
     PageDown,
     FirstCard,
@@ -335,7 +341,7 @@ pub const COMMANDS: &[Command] = &[
         &[ch('h'), key(KeyCode::Left)],
         "previous column",
         G::Navigation,
-        CARDS,
+        only(Context::Board),
     )
     .hint(3, "column")
     .pair(C::NextColumn, "previous / next column"),
@@ -344,36 +350,84 @@ pub const COMMANDS: &[Command] = &[
         &[ch('l'), key(KeyCode::Right)],
         "next column",
         G::Navigation,
-        CARDS,
+        only(Context::Board),
     ),
     Command::new(
         C::PreviousCard,
         &[ch('k'), key(KeyCode::Up)],
         "previous card",
         G::Navigation,
-        CARDS,
+        only(Context::Board),
     ),
     Command::new(
         C::NextCard,
         &[ch('j'), key(KeyCode::Down)],
         "next card",
         G::Navigation,
-        CARDS,
+        only(Context::Board),
     )
     .hint(2, "card")
     .pair(C::PreviousCard, "next / previous card"),
     Command::new(
+        C::CardLeft,
+        &[ch('h'), key(KeyCode::Left)],
+        "card to the left",
+        G::Navigation,
+        only(Context::AllTasks),
+    )
+    .hint(3, "card")
+    .pair(C::CardRight, "card to the left / right"),
+    Command::new(
+        C::CardRight,
+        &[ch('l'), key(KeyCode::Right)],
+        "card to the right",
+        G::Navigation,
+        only(Context::AllTasks),
+    ),
+    Command::new(
+        C::RowUp,
+        &[ch('k'), key(KeyCode::Up)],
+        "row up",
+        G::Navigation,
+        only(Context::AllTasks),
+    ),
+    Command::new(
+        C::RowDown,
+        &[ch('j'), key(KeyCode::Down)],
+        "row down",
+        G::Navigation,
+        only(Context::AllTasks),
+    )
+    .hint(2, "row")
+    .pair(C::RowUp, "row down / up"),
+    Command::new(
+        C::PreviousGroup,
+        &[ch('[')],
+        "previous column group",
+        G::Navigation,
+        only(Context::AllTasks),
+    )
+    .hint(4, "column")
+    .pair(C::NextGroup, "previous / next column group"),
+    Command::new(
+        C::NextGroup,
+        &[ch(']')],
+        "next column group",
+        G::Navigation,
+        only(Context::AllTasks),
+    ),
+    Command::new(
         C::PageUp,
         &[key(KeyCode::PageUp)],
-        "up five cards",
+        "up five cards or rows",
         G::Navigation,
         CARDS,
     )
-    .pair(C::PageDown, "up / down five cards"),
+    .pair(C::PageDown, "up / down five cards or rows"),
     Command::new(
         C::PageDown,
         &[key(KeyCode::PageDown)],
-        "down five cards",
+        "down five cards or rows",
         G::Navigation,
         CARDS,
     ),
@@ -768,5 +822,9 @@ mod tests {
         assert_eq!(hints[1], ("j/k".to_owned(), "card"));
         assert!(hints.contains(&("h/l".to_owned(), "column")));
         assert!(hints.contains(&("H/L".to_owned(), "move")));
+        let hints = super::hints(Context::AllTasks, |_| true);
+        assert!(hints.contains(&("j/k".to_owned(), "row")));
+        assert!(hints.contains(&("h/l".to_owned(), "card")));
+        assert!(hints.contains(&("[/]".to_owned(), "column")));
     }
 }

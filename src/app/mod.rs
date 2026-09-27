@@ -400,8 +400,36 @@ mod tests {
         press(&mut app, &[KeyCode::Enter]);
         assert_eq!(app.model.selected_task_id(), Some(first));
         assert_eq!(app.model.ui.active_column, 1);
-        press(&mut app, &[KeyCode::Down]);
+        // Both matches share a row of the grid.
+        press(&mut app, &[KeyCode::Right]);
         assert_eq!(app.model.selected_task_id(), Some(second));
+    }
+
+    #[test]
+    fn all_tasks_grid_moves_spatially() {
+        // #27: j/k move by row keeping the position in the row, h/l move
+        // within the row, and [ / ] jump between column groups.
+        let (_directory, mut app) = test_app();
+        app.resize(160, 45);
+        let first: Vec<Uuid> = (0..5).map(|n| add(&mut app, 0, &format!("a{n}"))).collect();
+        let second: Vec<Uuid> = (0..2).map(|n| add(&mut app, 1, &format!("b{n}"))).collect();
+        // Rows of three: [a0 a1 a2] [a3 a4] [b0 b1].
+        press(&mut app, &[KeyCode::Char('v'), KeyCode::Char('l')]);
+        assert_eq!(app.model.selected_task_id(), Some(first[1]));
+        let steps = [
+            ('j', first[4]),
+            ('j', second[1]),
+            ('k', first[4]),
+            ('l', first[4]),
+            ('h', first[3]),
+            ('k', first[0]),
+            (']', second[0]),
+            ('[', first[0]),
+        ];
+        for (key, expected) in steps {
+            press(&mut app, &[KeyCode::Char(key)]);
+            assert_eq!(app.model.selected_task_id(), Some(expected), "after {key}");
+        }
     }
 
     #[test]

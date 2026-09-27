@@ -89,8 +89,14 @@ impl Updater<'_> {
             CommandId::NextColumn | CommandId::RailNext => self.move_column(1),
             CommandId::PreviousCard => self.move_selection(-1),
             CommandId::NextCard => self.move_selection(1),
-            CommandId::PageUp => self.move_selection(-5),
-            CommandId::PageDown => self.move_selection(5),
+            CommandId::RowUp => self.move_row(-1),
+            CommandId::RowDown => self.move_row(1),
+            CommandId::CardLeft => self.move_in_row(-1),
+            CommandId::CardRight => self.move_in_row(1),
+            CommandId::PreviousGroup => self.move_column(-1),
+            CommandId::NextGroup => self.move_column(1),
+            CommandId::PageUp => self.page(-5),
+            CommandId::PageDown => self.page(5),
             CommandId::FirstCard => self.select_edge(true),
             CommandId::LastCard => self.select_edge(false),
             CommandId::RailFirst => self.select_column(0),
@@ -495,6 +501,57 @@ impl Updater<'_> {
             None => tasks.len() - 1,
         };
         self.model.select_task(tasks[next]);
+        self.animate(AnimationKind::Selection, 100);
+    }
+
+    fn page(&mut self, direction: isize) {
+        match self.model.ui.view {
+            ViewMode::Board => self.move_selection(direction),
+            ViewMode::AllTasks => self.move_row(direction),
+        }
+    }
+
+    /// The selected card's (row, position in the row) in the All tasks
+    /// grid.
+    fn grid_position(&self, rows: &[Vec<Uuid>]) -> Option<(usize, usize)> {
+        let id = self.model.selected_task_id()?;
+        rows.iter().enumerate().find_map(|(row, tasks)| {
+            tasks
+                .iter()
+                .position(|task| *task == id)
+                .map(|slot| (row, slot))
+        })
+    }
+
+    /// Moves up or down the All tasks grid by `direction` rows, keeping
+    /// the same position in the row where the new row is long enough.
+    fn move_row(&mut self, direction: isize) {
+        let rows = ui::all_tasks_rows(self.model);
+        if rows.is_empty() {
+            return;
+        }
+        let (row, slot) = match self.grid_position(&rows) {
+            Some((row, slot)) => (
+                row.saturating_add_signed(direction).min(rows.len() - 1),
+                slot,
+            ),
+            None if direction > 0 => (0, 0),
+            None => (rows.len() - 1, 0),
+        };
+        let tasks = &rows[row];
+        self.model.select_task(tasks[slot.min(tasks.len() - 1)]);
+        self.animate(AnimationKind::Selection, 100);
+    }
+
+    /// Moves left or right within the selected card's row.
+    fn move_in_row(&mut self, direction: isize) {
+        let rows = ui::all_tasks_rows(self.model);
+        let Some((row, slot)) = self.grid_position(&rows) else {
+            return self.move_row(1);
+        };
+        let tasks = &rows[row];
+        let slot = slot.saturating_add_signed(direction).min(tasks.len() - 1);
+        self.model.select_task(tasks[slot]);
         self.animate(AnimationKind::Selection, 100);
     }
 

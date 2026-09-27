@@ -13,7 +13,7 @@ mod lanes;
 mod rail;
 mod text;
 
-pub(crate) use geometry::sync_scroll;
+pub(crate) use geometry::{all_tasks_rows, sync_scroll};
 
 use crate::animation::{AnimationKind, ease_out_cubic};
 use crate::app::{Model, Screen, ViewMode};

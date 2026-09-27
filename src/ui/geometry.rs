@@ -404,6 +404,26 @@ pub(crate) fn all_tasks(model: &Model, main: Rect) -> AllTasks {
     }
 }
 
+/// The All tasks grid as the user sees it: each row's task ids, top to
+/// bottom, so the keys can move through it spatially.
+pub(crate) fn all_tasks_rows(model: &Model) -> Vec<Vec<Uuid>> {
+    let (width, height) = model.ui.viewport;
+    let page = page(model, Rect::new(0, 0, width, height));
+    all_tasks(model, page.main)
+        .items
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::Row { column, tasks } => Some(
+                tasks
+                    .into_iter()
+                    .map(|task| model.board.columns[column].tasks[task].id)
+                    .collect(),
+            ),
+            Item::Header { .. } => None,
+        })
+        .collect()
+}
+
 /// The first visible All tasks item: the remembered scroll position,
 /// moved if needed to show the selected card (and its column's header,
 /// when it is in the first row).
