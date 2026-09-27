@@ -2,33 +2,33 @@
 source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
- TUI KANBAN   Snapshot Board   [BOARD]                                                       saved
- COLUMNS           │╭──────────────────────────────────────────────────────────────────────────────╮
-                    │ Backlog  3                                                                   │
- ▌ Backlog 3        │╭────────────────────────────────────────────────────────────────────────────╮│
-   In Prog…2        ││Write the README                                                            ││
-   Done    2        ││                                                                            ││
-                    ││Cover install, usage, keys and the file format.                             ││
-                    ││ Backlog  •  updated 1d                                                     ││
-                    │╰────────────────────────────────────────────────────────────────────────────╯│
-                    │╭────────────────────────────────────────────────────────────────────────────╮│
-                    ││Reco╭ Delete task ─────────────────────────────────╮                        ││
-                    ││    │Delete Write the README?                      │                        ││
-                    ││Comm│                                              │                        ││
-                    ││ Bac│y delete  •  n cancel                         │                        ││
-                    │╰────│                                              │────────────────────────╯│
-                    │╭────│                                              │────────────────────────╮│
-                    ││Pack│                                              │                        ││
-                    ││    │                                              │                        ││
-                    ││No d╰──────────────────────────────────────────────╯                        ││
-                    ││ Backlog  •  updated 9d                                                     ││
-                    │╰────────────────────────────────────────────────────────────────────────────╯│
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    ╰──────────────────────────────────────────────────────────────────────────────╯
- y delete  •  n cancel
+ Snapshot Board   Board · All tasks
+
+  Columns              Backlog  3                In Progress  2            Done  2
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         3
+   In Progress     2   ▌ Write the README        ▎ Calmer card style       ▎ Set up CI
+   Done            2   ▌ Cover install, usage…   ▎ Tiles with an accent…   ▎ fmt, clippy and test…
+                       ▌ ◷ 1d ago                ▎ ◷ 12m ago               ▎ ◷ 5h ago
+
+                       ▎ Record a demo           ▎ Command table           ▎ Snapshot tests
+                       ▎ Commit the .tape fil…   ▎ Every keybinding def…   ▎ ◷ 1d ago
+                       ▎╭ Delete task ─────────────────────────────────────╮
+                        │                                                  │
+                       ▎│  Delete "Write the README"?                      │
+                       ▎│  You can undo this with u.                       │
+                       ▎│                                                  │
+                        │  y delete   n cancel                             │
+                        │                                                  │
+                        ╰──────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+ DELETE   ● saved   y delete   n cancel

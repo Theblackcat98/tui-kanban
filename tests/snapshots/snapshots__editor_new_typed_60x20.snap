@@ -2,23 +2,23 @@
 source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
- TUI KANBAN   Snapshot Board                         saved
-╭──────────────────────────────────────────────────────────╮
-│ Back╭ New task ────────────────────────────────────╮     │
-│╭────│ Title      ╭────────────────────────────────╮│────╮│
-││Writ│            │Task title                      ││    ││
-││    │            ╰────────────────────────────────╯│    ││
-││Cove│ Description╭────────────────────────────────╮│    ││
-││ Bac│            │Some details                    ││    ││
-│╰────│            │                                ││────╯│
-│╭────│            │                                ││────╮│
-││Reco│            │                                ││    ││
-││    │            │                                ││    ││
-││Comm│            │                                ││    ││
-││ Bac│            ╰────────────────────────────────╯│    ││
-│╰────│Enter save  •  Tab switch field               │────╯│
-│     │                                              │     │
-│     ╰──────────────────────────────────────────────╯     │
-│                                                          │
-╰──────────────────────────────────────────────────────────╯
- Enter save  •  Tab switch field  •  Esc cancel
+ Snapshot Board   Board · All tasks
+
+ Backlog  3
+ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ╭ New task ──────────────────────────────────────────────╮
+ │                                                        │
+ │  Title                                                 │
+ │    What needs doing?                                   │
+ │                                                        │
+ │  Description                                           │
+ │  ▎ Some details                                        │
+ │                                                        │
+ │  Enter save   Tab switch field   Esc cancel            │
+ │                                                        │
+ ╰────────────────────────────────────────────────────────╯
+
+
+
+
+ EDIT   ● saved   Enter save   Tab switch field

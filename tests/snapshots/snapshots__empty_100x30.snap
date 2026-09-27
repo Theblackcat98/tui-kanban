@@ -2,33 +2,33 @@
 source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
- TUI KANBAN   Project Board   [BOARD]                                                        saved
- COLUMNS           │╭──────────────────────────────────────────────────────────────────────────────╮
-                    │ Backlog  0                                                                   │
- ▌ Backlog 0        │No cards yet                                                                  │
-   In Prog…0        │                                                                              │
-   Done    0        │Press n to create one                                                         │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    ╰──────────────────────────────────────────────────────────────────────────────╯
- Tab rail  •  j/k card  •  h/l column  •  v view  •  n new  •  Enter open  •  e edit  •  H/L move
+ Project Board   Board · All tasks
+
+  Columns              Backlog  0                In Progress  0            Done  0
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         0
+   In Progress     0   No tasks yet              No tasks yet              No tasks yet
+   Done            0   n to add one
+                       ? for all keys
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ BOARD   ● saved   Tab rail   j/k card   h/l column   v view   n new   / search   ? help

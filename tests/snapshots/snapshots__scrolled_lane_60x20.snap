@@ -2,23 +2,23 @@
 source: tests/snapshots.rs
 expression: "harness.screen(60, 20)"
 ---
- Project Board   Board · All tasks
+ Snapshot Board   Board · All tasks
 
- Backlog  0
+ Backlog  9
  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ↑ 2 more
+ ▎ Task 3
+ ▎ ◷ 3h ago
 
- No tasks yet
- n to add one
- ? for all keys
+ ▎ Task 4
+ ▎ With a description
+ ▎ ◷ 4h ago
 
+ ▎ Task 5
+ ▎ ◷ 5h ago
 
-
-
-
-
-
-
-
-
-
+ ▌ Task 6
+ ▌ With a description
+ ▌ ◷ 6h ago
+ ↓ 3 more
  BOARD   ● saved   j/k card   h/l column   v view   n new

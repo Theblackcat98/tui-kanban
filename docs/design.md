@@ -81,8 +81,10 @@ matches`.
 (BOARD, ALL TASKS, RAIL, SEARCH, DETAIL, EDIT, HELP, DELETE). The save
 icon is `●` when saved and `✕` when the last save failed. Hints come
 from the command table, most important first, cut to whole hints that
-fit. A toast replaces the hints while it shows, so it is never cut off;
-error toasts stay until the next key press.
+fit, and hints for commands that would do nothing (such as "edit" with
+no task selected) are left out. A toast replaces the hints while it
+shows, so it is never cut off, in `success`, `info` or `danger`; error
+toasts stay until the next key press.
 
 ### Lane
 
@@ -123,17 +125,19 @@ focus, the active entry is on `selection`.
 
 ### Detail drawer
 
-On `panel`, with an accent edge. The title wraps in full; one line of
-metadata follows (`Backlog · #1a2b3c4d · updated 2d ago · created
-Sep 3`), then the description with its line breaks and indentation
-kept, scrollable (j/k, PgUp/PgDn) and with a scrollbar when it
-overflows. Its own hints sit at the bottom.
+On `panel`, with an accent edge. The title wraps in full (up to a third
+of the height); two lines of metadata follow (`Backlog · #1a2b3c4d`,
+then `updated 2d ago · created Sep 3`), then the description with its
+line breaks and indentation kept, scrollable (j/k a line, PgUp/PgDn a
+page, stopping at the end) and with a scrollbar when it overflows. Its
+hints are in the status line.
 
 ### Overlays
 
 Help, the editor and the delete dialog float centred on `panel` with a
 rounded `border` (the delete dialog's border is `danger`). Inputs in
-the editor are `surface` fields; the active one has an accent bar.
+the editor are `surface` fields with a label above; the active one has
+an accent bar, and empty ones show a placeholder.
 
 ### Empty states
 

@@ -308,7 +308,7 @@ fn toast_showing() {
     harness.app.model.session.toast = Some(Toast {
         message: "Task saved".to_owned(),
         kind: ToastKind::Success,
-        expires_at: clock().instant + Duration::from_secs(3),
+        expires_at: Some(clock().instant + Duration::from_secs(3)),
     });
     screen_snapshot!("toast_100x30", harness, 100, 30);
     screen_snapshot!("toast_60x20", harness, 60, 20);
@@ -334,6 +334,46 @@ fn long_and_wide_character_text() {
     screen_snapshot!("long_text_board_100x30", harness, 100, 30);
     harness.keys(&[KeyCode::Char('j'), KeyCode::Enter]);
     screen_snapshot!("long_text_detail_100x30", harness, 100, 30);
+}
+
+fn nine_tasks_board() -> Board {
+    board(vec![column(
+        "backlog",
+        "Backlog",
+        (1..=9)
+            .map(|n| {
+                task(
+                    n,
+                    &format!("Task {n}"),
+                    if n % 2 == 0 { "With a description" } else { "" },
+                    n as i64 * HOUR,
+                )
+            })
+            .collect(),
+    )])
+}
+
+/// Long lists scroll by whole cards and say how many are hidden (#14, #31).
+#[test]
+fn scrolled_lists() {
+    let mut harness = Harness::new(nine_tasks_board());
+    harness.keys(&[KeyCode::Char('j'); 5]);
+    screen_snapshot!("scrolled_lane_60x20", harness, 60, 20);
+    harness.keys(&[KeyCode::Char('v')]);
+    screen_snapshot!("scrolled_all_tasks_60x14", harness, 60, 14);
+}
+
+#[test]
+fn detail_with_a_long_description() {
+    let mut board = typical_board();
+    board.columns[0].tasks[0].description = (1..=40)
+        .map(|n| format!("  - line {n}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut harness = Harness::new(board);
+    harness.keys(&[KeyCode::Enter, KeyCode::Char('j'), KeyCode::Char('j')]);
+    screen_snapshot!("detail_scrolled_100x30", harness, 100, 30);
+    screen_snapshot!("detail_pinned_160x45", harness, 160, 45);
 }
 
 #[test]

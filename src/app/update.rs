@@ -17,12 +17,27 @@ use crate::domain::{Board, BoardError};
 use crate::ui;
 
 pub fn update(model: &mut Model, action: Action, clock: Clock) -> Vec<Effect> {
+    // An error toast stays until the next key press.
+    let key_press = matches!(
+        action,
+        Action::Command(_) | Action::Edit(_) | Action::DismissHelp
+    );
+    if key_press
+        && model
+            .session
+            .toast
+            .as_ref()
+            .is_some_and(|toast| toast.expires_at.is_none())
+    {
+        model.session.toast = None;
+    }
     let mut updater = Updater {
         model,
         clock,
         effects: Vec::new(),
     };
     updater.handle(action);
+    ui::sync_scroll(updater.model);
     updater.effects
 }
 
@@ -47,11 +62,7 @@ impl Updater<'_> {
             Action::Tick => self.tick(),
             Action::SaveFinished(Ok(())) => self.model.session.save_state = SaveState::Saved,
             Action::SaveFinished(Err(message)) => {
-                self.toast(
-                    format!("Could not save: {message}"),
-                    ToastKind::Error,
-                    Duration::from_secs(6),
-                );
+                self.toast(format!("Could not save: {message}"), ToastKind::Error, None);
                 self.model.session.save_state = SaveState::Failed(message);
             }
         }
@@ -65,7 +76,8 @@ impl Updater<'_> {
             .session
             .toast
             .as_ref()
-            .is_some_and(|toast| toast.expires_at <= now)
+            .and_then(|toast| toast.expires_at)
+            .is_some_and(|expires_at| expires_at <= now)
         {
             self.model.session.toast = None;
         }
@@ -143,8 +155,10 @@ impl Updater<'_> {
                 self.model.reconcile_selection();
             }
             CommandId::ApplySearch => self.model.ui.search.input = None,
-            CommandId::ScrollUp => self.scroll_detail(-3),
-            CommandId::ScrollDown => self.scroll_detail(3),
+            CommandId::ScrollUp => self.scroll_detail(-10),
+            CommandId::ScrollDown => self.scroll_detail(10),
+            CommandId::LineUp => self.scroll_detail(-1),
+            CommandId::LineDown => self.scroll_detail(1),
             CommandId::NextField => {
                 if let Some(Screen::Editor(editor)) = self.model.ui.screens.last_mut() {
                     editor.field = match editor.field {
@@ -225,11 +239,20 @@ impl Updater<'_> {
             .start(kind, Duration::from_millis(millis), self.clock.instant);
     }
 
-    fn toast(&mut self, message: impl Into<String>, kind: ToastKind, duration: Duration) {
+    /// Shows a toast for `duration`, or until the next key press if that
+    /// is `None`.
+    fn toast(
+        &mut self,
+        message: impl Into<String>,
+        kind: ToastKind,
+        duration: impl Into<Option<Duration>>,
+    ) {
         self.model.session.toast = Some(Toast {
             message: message.into(),
             kind,
-            expires_at: self.clock.instant + duration,
+            expires_at: duration
+                .into()
+                .map(|duration| self.clock.instant + duration),
         });
         self.animate(AnimationKind::Toast, 220);
     }
@@ -368,7 +391,7 @@ impl Updater<'_> {
         });
         let label = format!("delete '{}'", self.task_title(id));
         if let Err(message) = self.change(label, |board, _| board.remove_task(id).map(|_| ())) {
-            self.toast(message, ToastKind::Error, Duration::from_secs(4));
+            self.toast(message, ToastKind::Error, None);
             return;
         }
         // Close the dialog, and the detail drawer too if it showed this task.
@@ -411,7 +434,7 @@ impl Updater<'_> {
                 self.model.reconcile_selection();
                 self.animate(AnimationKind::CardMove, 240);
             }
-            Err(message) => self.toast(message, ToastKind::Error, Duration::from_secs(4)),
+            Err(message) => self.toast(message, ToastKind::Error, None),
         }
     }
 
@@ -438,7 +461,17 @@ impl Updater<'_> {
         }
         let column = column.min(self.model.board.columns.len() - 1);
         self.model.ui.active_column = column;
-        self.model.ui.selected = self.model.first_visible_in(column);
+        // In the Board view, select the lane's first card on screen, so
+        // switching lanes doesn't scroll them.
+        let offset = match self.model.ui.view {
+            ViewMode::Board => self.model.ui.scroll.lane(column),
+            ViewMode::AllTasks => 0,
+        };
+        let visible = self.model.visible_task_indices(column);
+        self.model.ui.selected = visible
+            .get(offset)
+            .or(visible.first())
+            .map(|index| self.model.board.columns[column].tasks[*index].id);
         self.model.reconcile_selection();
         self.animate(AnimationKind::Selection, 140);
     }

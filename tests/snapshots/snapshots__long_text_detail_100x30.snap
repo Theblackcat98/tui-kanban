@@ -2,33 +2,33 @@
 source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
- TUI KANBAN   Snapshot Board   [BOARD]                      ╭ Task details ────────────────────────╮
- COLUMNS           │╭───────────────────────────────────────│日本語のタスク名と絵文字 🦀🚀         │
-                    │ A column with a very long name that wi│が混ざったタイトル                    │
- ▌ A colum…2        │╭──────────────────────────────────────│                                      │
-   Done    1        ││A very long task title that keeps goin│ A column with a very long name that w│
-                    ││screen                                │                                      │
-                    ││- an indented list item               │全角文字の説明文です。幅の計算を確かめ│
-                    ││ A column with a very long name that w│ます。                                │
-                    │╰──────────────────────────────────────│                                      │
-                    │╭──────────────────────────────────────│                                      │
-                    ││日本語のタスク名と絵文字 🦀🚀 が混ざっ│                                      │
-                    ││                                      │                                      │
-                    ││全角文字の説明文です。幅の計算を確かめ│                                      │
-                    ││ A column with a very long name that w│                                      │
-                    │╰──────────────────────────────────────│                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │created 1d                            │
-                    │                                       │updated 3h  •  id 00000000            │
-                    │                                       │e edit  •  H/L move  •  d delete      │
-                    ╰───────────────────────────────────────│                                      │
- e edit  •  H/L move  •  d delete  •  Esc close  •  PgUp/PgD╰──────────────────────────────────────╯
+ Snapshot Board   Board · All tasks
+                                                            ▎
+  Columns              A column with a very long name th…  2▎  日本語のタスク名と絵文字 🦀🚀
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▎  が混ざったタイトル
+ ▌ A column with … 2                                        ▎
+   Done            1   ▎ A very long task title that keeps  ▎  A column with a very long name th…
+                       ▎ going well past the width of any…  ▎  updated 3h ago · created Aug 28
+                       ▎ - an indented list item            ▎
+                       ▎ ◷ 2m ago                           ▎  全角文字の説明文です。幅の計算を確
+                                                            ▎  かめます。
+                       ▌ 日本語のタスク名と絵文字 🦀🚀      ▎
+                       ▌ が混ざったタイトル                 ▎
+                       ▌ 全角文字の説明文です。幅の計算を…  ▎
+                       ▌ ◷ 3h ago                           ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+ DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help

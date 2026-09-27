@@ -1,169 +1,152 @@
-use super::cards;
-use super::muted_style;
-use super::{render_clear, short_id, surface_style};
-use crate::animation::{AnimationKind, ease_out_cubic};
-use crate::app::Model;
-use crate::clock::Clock;
-use crate::command::Context;
-use crate::layout::Breakpoint;
+//! The detail drawer: the whole task, on `panel` with an accent edge.
+//!
+//! It is drawn at full width into its own buffer and slides in from the
+//! right, so its text never reflows while it opens.
+
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
+use ratatui::widgets::{
+    Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget,
+};
+use uuid::Uuid;
+
+use super::geometry;
+use super::text::{relative_time, short_date, truncate_text};
+use super::{AnimationKind, faint, fg, muted, progress, short_id};
+use crate::app::Model;
+use crate::clock::Clock;
 
 pub(crate) fn render(
     frame: &mut Frame<'_>,
-    area: Rect,
+    drawer: Rect,
     model: &Model,
-    task_id: uuid::Uuid,
+    task: Uuid,
     scroll: u16,
-    breakpoint: Breakpoint,
     clock: Clock,
 ) {
-    let full_width = if breakpoint.full_width_drawer() {
-        area.width
-    } else {
-        (area.width * 2 / 5).clamp(32, 58)
-    };
-    let progress = model
-        .ui
-        .animations
-        .progress(AnimationKind::Drawer, clock.instant)
-        .map(ease_out_cubic)
-        .unwrap_or(1.0);
-    let width = ((full_width as f32 * progress).round() as u16).min(area.width);
-    if width == 0 {
+    let drawer = drawer.intersection(frame.area());
+    if drawer.is_empty() {
         return;
     }
-    let drawer = Rect::new(
-        area.x + area.width.saturating_sub(width),
-        area.y,
-        width,
-        area.height,
-    );
-    render_clear(frame, drawer);
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(model.ui.theme.accent))
-        .style(surface_style(model))
-        .title(Span::styled(
-            " Task details ",
-            Style::default()
-                .fg(model.ui.theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(drawer);
-    frame.render_widget(block, drawer);
-    if inner.width == 0 || inner.height == 0 {
-        return;
+    let mut buffer = Buffer::empty(Rect::new(0, 0, drawer.width, drawer.height));
+    draw(&mut buffer, model, task, scroll, clock);
+
+    let shown =
+        (f32::from(drawer.width) * progress(model, AnimationKind::Drawer, clock)).round() as u16;
+    let left = drawer.right() - shown.min(drawer.width);
+    let target = frame.buffer_mut();
+    for y in 0..drawer.height {
+        for x in 0..shown.min(drawer.width) {
+            target[(left + x, drawer.y + y)] = buffer[(x, y)].clone();
+        }
+    }
+}
+
+fn draw(buffer: &mut Buffer, model: &Model, task_id: Uuid, scroll: u16, clock: Clock) {
+    let theme = &model.ui.theme;
+    let area = buffer.area;
+    Block::default()
+        .style(Style::default().bg(theme.panel))
+        .render(area, buffer);
+    for y in area.top()..area.bottom() {
+        buffer[(area.x, y)]
+            .set_symbol("▎")
+            .set_style(fg(theme.accent));
     }
 
     let Some(task) = model.board.task(task_id) else {
-        frame.render_widget(
-            Paragraph::new("This task no longer exists.")
-                .style(muted_style(model).bg(model.ui.theme.surface)),
-            inner,
+        line(
+            buffer,
+            Rect::new(3, 1, area.width.saturating_sub(6), 1),
+            Line::from(Span::styled("This task no longer exists.", muted(model))),
         );
         return;
     };
-    let column_name = model
+    let layout = geometry::detail(task, area);
+    for (row, title) in layout.title.iter().enumerate() {
+        line(
+            buffer,
+            Rect::new(
+                layout.title_area.x,
+                layout.title_area.y + row as u16,
+                layout.title_area.width,
+                1,
+            ),
+            Line::from(Span::styled(
+                title.clone(),
+                fg(theme.text).add_modifier(Modifier::BOLD),
+            )),
+        );
+    }
+
+    let column = model
         .board
-        .columns
-        .iter()
-        .find_map(|column| {
-            column
-                .tasks
-                .iter()
-                .position(|item| item.id == task_id)
-                .map(|_| column.name.as_str())
-        })
+        .task_location(task_id)
+        .map(|(column, _)| model.board.columns[column].name.as_str())
         .unwrap_or("Unknown column");
-    let sections = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Length(2),
-        Constraint::Min(3),
-        Constraint::Length(2),
-        Constraint::Length(2),
-    ])
-    .split(inner);
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            format!(" {}", task.title),
-            Style::default()
-                .fg(model.ui.theme.text)
-                .add_modifier(Modifier::BOLD),
-        )))
-        .style(surface_style(model))
-        .wrap(Wrap { trim: true }),
-        sections[0],
-    );
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            format!(" {}  •  {}", column_name, short_id(task.id)),
-            Style::default().fg(model.ui.theme.accent_alt),
-        )))
-        .style(surface_style(model)),
-        sections[1],
-    );
-
-    let description = if task.description.trim().is_empty() {
-        "No description".to_owned()
-    } else {
-        task.description.clone()
-    };
-    let description_style = Style::default()
-        .fg(if task.description.trim().is_empty() {
-            model.ui.theme.muted
-        } else {
-            model.ui.theme.text
-        })
-        .bg(model.ui.theme.surface);
-    frame.render_widget(
-        Paragraph::new(description)
-            .style(description_style)
-            .wrap(Wrap { trim: true })
-            .scroll((scroll, 0)),
-        sections[2],
-    );
-
-    let metadata = vec![
-        Line::from(Span::styled(
-            format!(
-                " created {}",
-                cards::relative_time(task.created_at, clock.wall_millis)
-            ),
-            muted_style(model),
-        )),
-        Line::from(Span::styled(
-            format!(
-                " updated {}  •  id {}",
-                cards::relative_time(task.updated_at, clock.wall_millis),
-                short_id(task.id)
-            ),
-            muted_style(model),
-        )),
+    let meta = [
+        format!("{column} · #{}", short_id(task.id)),
+        format!(
+            "updated {} · created {}",
+            relative_time(task.updated_at, clock.wall_millis),
+            short_date(task.created_at, clock.wall_millis),
+        ),
     ];
-    frame.render_widget(
-        Paragraph::new(metadata)
-            .style(surface_style(model))
-            .wrap(Wrap { trim: true }),
-        sections[3],
-    );
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            format!(
-                " {}",
-                super::hint_text(
-                    model,
-                    Context::Detail,
-                    inner.width.saturating_sub(1) as usize
-                )
+    for (row, text) in meta.iter().enumerate().take(layout.meta.height as usize) {
+        line(
+            buffer,
+            Rect::new(
+                layout.meta.x,
+                layout.meta.y + row as u16,
+                layout.meta.width,
+                1,
             ),
-            muted_style(model),
-        )))
-        .style(surface_style(model))
-        .wrap(Wrap { trim: true }),
-        sections[4],
-    );
+            Line::from(Span::styled(
+                truncate_text(text, layout.meta.width as usize),
+                faint(model),
+            )),
+        );
+    }
+
+    let body = layout.body;
+    if layout.description.is_empty() {
+        line(
+            buffer,
+            body,
+            Line::from(Span::styled("No description", faint(model))),
+        );
+        return;
+    }
+    let scroll = scroll.min(layout.max_scroll());
+    let lines: Vec<Line> = layout
+        .description
+        .iter()
+        .skip(scroll as usize)
+        .take(body.height as usize)
+        .map(|text| Line::from(Span::styled(text.clone(), fg(theme.text))))
+        .collect();
+    Paragraph::new(lines).render(body, buffer);
+    if layout.max_scroll() > 0 {
+        let mut state = ScrollbarState::new(layout.max_scroll() as usize + 1)
+            .position(scroll as usize)
+            .viewport_content_length(body.height as usize);
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .track_symbol(Some("│"))
+            .track_style(faint(model))
+            .thumb_symbol("┃")
+            .thumb_style(fg(theme.text_muted))
+            .render(layout.scrollbar, buffer, &mut state);
+    }
+}
+
+fn line(buffer: &mut Buffer, area: Rect, line: Line<'_>) {
+    let area = area.intersection(buffer.area);
+    if !area.is_empty() {
+        Paragraph::new(line).render(Rect { height: 1, ..area }, buffer);
+    }
 }

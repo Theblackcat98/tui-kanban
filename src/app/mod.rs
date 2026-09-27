@@ -18,8 +18,8 @@ pub use action::{Action, Effect, keymap};
 pub use history::History;
 pub use input::TextInput;
 pub use model::{
-    EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Search, Session, Toast,
-    ToastKind, Ui, ViewMode, VisibleTask,
+    EditorField, EditorState, FocusRegion, Model, SaveState, Screen, Scroll, Search, Session,
+    Toast, ToastKind, Ui, ViewMode, VisibleTask,
 };
 pub use update::update;
 
@@ -28,12 +28,13 @@ use clap::Parser;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEvent};
 use std::collections::VecDeque;
+use std::env;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::clock::Clock;
 use crate::storage::JsonStore;
-use crate::theme::Theme;
+use crate::theme::{Theme, reduce_motion};
 use crate::ui;
 
 /// How often the idle event loop wakes to refresh relative times.
@@ -44,6 +45,7 @@ const IDLE_REFRESH: Duration = Duration::from_secs(1);
 pub struct Cli {
     #[arg(long, default_value = ".tui-kanban.json")]
     pub board: PathBuf,
+    /// Turn off animations (a non-empty REDUCE_MOTION does the same).
     #[arg(long)]
     pub no_animation: bool,
 }
@@ -128,8 +130,14 @@ impl App {
         if let Some(frame) = self.model.ui.animations.next_frame_timeout(now) {
             timeout = timeout.min(frame);
         }
-        if let Some(toast) = &self.model.session.toast {
-            timeout = timeout.min(toast.expires_at.saturating_duration_since(now));
+        if let Some(expires_at) = self
+            .model
+            .session
+            .toast
+            .as_ref()
+            .and_then(|toast| toast.expires_at)
+        {
+            timeout = timeout.min(expires_at.saturating_duration_since(now));
         }
         timeout
     }
@@ -138,7 +146,8 @@ impl App {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let store = JsonStore::new(cli.board);
-    let mut app = App::new(store, Theme::from_env(), !cli.no_animation)?;
+    let animations = !cli.no_animation && !reduce_motion(env::var_os("REDUCE_MOTION").as_deref());
+    let mut app = App::new(store, Theme::from_env(), animations)?;
     let mut terminal = ratatui::try_init().context("could not initialize terminal")?;
     if let Ok(size) = terminal.size() {
         app.resize(size.width, size.height);
@@ -279,7 +288,7 @@ mod tests {
         app.model.session.toast = Some(Toast {
             message: "hello".to_owned(),
             kind: ToastKind::Info,
-            expires_at: clock.instant + Duration::from_millis(400),
+            expires_at: Some(clock.instant + Duration::from_millis(400)),
         });
         assert_eq!(
             app.next_timeout(clock.instant + Duration::from_millis(100)),
@@ -531,6 +540,86 @@ mod tests {
             Some(ToastKind::Error)
         );
         assert!(app.finish().is_err());
+        // The error stays up until the next key press.
+        app.tick(clock().advance(Duration::from_secs(60)));
+        assert!(app.model.session.toast.is_some());
+        press(&mut app, &[KeyCode::Char('j')]);
+        assert!(app.model.session.toast.is_none());
+    }
+
+    /// Adds `count` tasks to the first column, each with a description.
+    fn add_many(app: &mut App, count: usize) -> Vec<Uuid> {
+        (0..count)
+            .map(|index| {
+                let title = format!("Task {index}");
+                let id = app.model.board.add_task(0, &title, "details", 0).unwrap();
+                app.model.reconcile_selection();
+                id
+            })
+            .collect()
+    }
+
+    #[test]
+    fn lanes_scroll_to_the_selection_and_remember_it() {
+        let (_directory, mut app) = test_app();
+        app.resize(100, 20);
+        let tasks = add_many(&mut app, 10);
+        assert_eq!(app.model.ui.scroll.lane(0), 0);
+        press(&mut app, &[KeyCode::End]);
+        assert_eq!(app.model.selected_task_id(), Some(tasks[9]));
+        let scrolled = app.model.ui.scroll.lane(0);
+        assert!(scrolled > 0);
+        // #31: moving focus to the rail and back keeps the scroll position.
+        press(&mut app, &[KeyCode::Tab]);
+        assert_eq!(app.model.ui.scroll.lane(0), scrolled);
+        press(
+            &mut app,
+            &[KeyCode::Tab, KeyCode::Char('l'), KeyCode::Char('h')],
+        );
+        assert_eq!(app.model.ui.scroll.lane(0), scrolled);
+        // Coming back to the lane selects its first card on screen.
+        assert_eq!(app.model.selected_task_id(), Some(tasks[scrolled]));
+        // Moving up only scrolls once the selection reaches the top.
+        press(&mut app, &[KeyCode::Up]);
+        assert_eq!(app.model.ui.scroll.lane(0), scrolled - 1);
+    }
+
+    #[test]
+    fn detail_scroll_stops_at_the_end_of_the_text() {
+        // #8: PgDn used to scroll past the description into blank space.
+        let (_directory, mut app) = test_app();
+        let id = add(&mut app, 0, "Short");
+        press(
+            &mut app,
+            &[KeyCode::Enter, KeyCode::PageDown, KeyCode::Char('j')],
+        );
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Detail { scroll: 0, .. })
+        ));
+
+        let long: String = (0..60).map(|line| format!("line {line}\n")).collect();
+        app.model
+            .board
+            .update_task(id, "Long".to_owned(), long, 0)
+            .unwrap();
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Char('j')]);
+        assert!(matches!(
+            top_screen(&app),
+            Some(Screen::Detail { scroll: 2, .. })
+        ));
+        press(&mut app, &[KeyCode::PageDown; 20]);
+        let Some(Screen::Detail { scroll, .. }) = top_screen(&app) else {
+            panic!("expected the detail drawer");
+        };
+        // 60 lines in a drawer of 30 rows: it stops with the last line at
+        // the bottom.
+        assert!(*scroll > 30 && *scroll < 60, "{scroll}");
+        let end = *scroll;
+        press(&mut app, &[KeyCode::Char('k')]);
+        assert!(
+            matches!(top_screen(&app), Some(Screen::Detail { scroll, .. }) if *scroll == end - 1)
+        );
     }
 
     fn toast_message(app: &App) -> &str {

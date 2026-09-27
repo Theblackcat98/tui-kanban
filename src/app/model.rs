@@ -126,7 +126,9 @@ pub enum ToastKind {
 pub struct Toast {
     pub message: String,
     pub kind: ToastKind,
-    pub expires_at: Instant,
+    /// When the toast goes away. Errors have none: they stay until the
+    /// next key press, so they can't be missed.
+    pub expires_at: Option<Instant>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -136,6 +138,29 @@ pub enum SaveState {
     /// The last save failed. The change is kept in memory and is saved
     /// with the next successful save.
     Failed(String),
+}
+
+/// Scroll positions, kept in the model so they survive focus changes and
+/// redraws. `update` keeps them valid with `ui::sync_scroll`.
+#[derive(Clone, Debug, Default)]
+pub struct Scroll {
+    /// Each lane's first visible card, as an index into its visible tasks.
+    lanes: Vec<usize>,
+    /// The first visible item of the All tasks list.
+    pub all_tasks: usize,
+}
+
+impl Scroll {
+    pub fn lane(&self, column: usize) -> usize {
+        self.lanes.get(column).copied().unwrap_or(0)
+    }
+
+    pub fn set_lane(&mut self, column: usize, offset: usize) {
+        if self.lanes.len() <= column {
+            self.lanes.resize(column + 1, 0);
+        }
+        self.lanes[column] = offset;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -157,6 +182,7 @@ pub struct Ui {
     pub search: Search,
     /// Screens above the board, bottom first.
     pub screens: Vec<Screen>,
+    pub scroll: Scroll,
     /// The terminal size in cells.
     pub viewport: (u16, u16),
     pub theme: Theme,
@@ -188,6 +214,7 @@ impl Model {
                 active_column: 0,
                 search: Search::default(),
                 screens: Vec::new(),
+                scroll: Scroll::default(),
                 viewport: (0, 0),
                 theme,
                 animations: AnimationEngine::new(AnimationSettings {
@@ -237,6 +264,14 @@ impl Model {
             CommandId::ToggleFocus => self.breakpoint().shows_rail(),
             CommandId::Undo => self.session.history.can_undo(),
             CommandId::Redo => self.session.history.can_redo(),
+            CommandId::OpenDetail
+            | CommandId::EditTask
+            | CommandId::DeleteTask
+            | CommandId::MoveTaskLeft
+            | CommandId::MoveTaskRight => {
+                self.selected_task_id().is_some()
+                    || matches!(self.ui.screens.last(), Some(Screen::Detail { .. }))
+            }
             _ => true,
         }
     }

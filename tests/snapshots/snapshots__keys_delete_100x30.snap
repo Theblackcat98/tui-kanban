@@ -2,33 +2,33 @@
 source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
- TUI KANBAN   Snapshot Board   [BOARD]                                                       saved
- COLUMNS           │╭──────────────────────────────────────────────────────────────────────────────╮
-                    │ Backlog  2                                                                   │
- ▌ Backlog 2        │╭────────────────────────────────────────────────────────────────────────────╮│
-   In Prog…2        ││Write the README                                                            ││
-   Done    2        ││                                                                            ││
-                    ││Cover install, usage, keys and the file format.                             ││
-                    ││ Backlog  •  updated 1d                                                     ││
-                    │╰────────────────────────────────────────────────────────────────────────────╯│
-                    │╭────────────────────────────────────────────────────────────────────────────╮│
-                    ││Package release binaries                                                    ││
-                    ││                                                                            ││
-                    ││No description                                                              ││
-                    ││ Backlog  •  updated 9d                                                     ││
-                    │╰────────────────────────────────────────────────────────────────────────────╯│
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    │                                                                              │
-                    ╰──────────────────────────────────────────────────────────────────────────────╯
- Tab rail  •  j/k card  •  h/l column  •  v view  •  n new  •  Enter open  •  e edit  •  H/L move
+ Snapshot Board   Board · All tasks
+
+  Columns              Backlog  2                In Progress  2            Done  2
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+ ▌ Backlog         2
+   In Progress     2   ▎ Write the README        ▎ Calmer card style       ▎ Set up CI
+   Done            2   ▎ Cover install, usage…   ▎ Tiles with an accent…   ▎ fmt, clippy and test…
+                       ▎ ◷ 1d ago                ▎ ◷ 12m ago               ▎ ◷ 5h ago
+
+                       ▌ Package release         ▎ Command table           ▎ Snapshot tests
+                       ▌ binaries                ▎ Every keybinding def…   ▎ ◷ 1d ago
+                       ▌ ◷ Aug 20                ▎ ◷ 1h ago
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ BOARD   ● saved   Task deleted · u to undo

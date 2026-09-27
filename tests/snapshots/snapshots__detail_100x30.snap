@@ -2,33 +2,33 @@
 source: tests/snapshots.rs
 expression: "harness.screen(100, 30)"
 ---
- TUI KANBAN   Snapshot Board   [BOARD]                      ╭ Task details ────────────────────────╮
- COLUMNS           │╭───────────────────────────────────────│Write the README                      │
-                    │ Backlog  3                            │                                      │
- ▌ Backlog 3        │╭──────────────────────────────────────│                                      │
-   In Prog…2        ││Write the README                      │ Backlog  •  00000000                 │
-   Done    2        ││                                      │                                      │
-                    ││Cover install, usage, keys and the fil│Cover install, usage, keys and the    │
-                    ││ Backlog  •  updated 1d               │file format.                          │
-                    │╰──────────────────────────────────────│                                      │
-                    │╭──────────────────────────────────────│                                      │
-                    ││Record a demo                         │                                      │
-                    ││                                      │                                      │
-                    ││Commit the .tape file too.            │                                      │
-                    ││ Backlog  •  updated 3d               │                                      │
-                    │╰──────────────────────────────────────│                                      │
-                    │╭──────────────────────────────────────│                                      │
-                    ││Package release binaries              │                                      │
-                    ││                                      │                                      │
-                    ││No description                        │                                      │
-                    ││ Backlog  •  updated 9d               │                                      │
-                    │╰──────────────────────────────────────│                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │                                      │
-                    │                                       │created 2d                            │
-                    │                                       │updated 1d  •  id 00000000            │
-                    │                                       │e edit  •  H/L move  •  d delete      │
-                    ╰───────────────────────────────────────│                                      │
- e edit  •  H/L move  •  d delete  •  Esc close  •  PgUp/PgD╰──────────────────────────────────────╯
+ Snapshot Board   Board · All tasks
+                                                            ▎
+  Columns              Backlog  3                In Progress▎  Write the README
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▎
+ ▌ Backlog         3                                        ▎  Backlog · #00000000
+   In Progress     2   ▌ Write the README        ▎ Calmer ca▎  updated 1d ago · created Aug 27
+   Done            2   ▌ Cover install, usage…   ▎ Tiles wit▎
+                       ▌ ◷ 1d ago                ▎ ◷ 12m ago▎  Cover install, usage, keys and the
+                                                            ▎  file format.
+                       ▎ Record a demo           ▎ Command t▎
+                       ▎ Commit the .tape fil…   ▎ Every key▎
+                       ▎ ◷ 3d ago                ▎ ◷ 1h ago ▎
+                                                            ▎
+                       ▎ Package release                    ▎
+                       ▎ binaries                           ▎
+                       ▎ ◷ Aug 20                           ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+                                                            ▎
+ DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help

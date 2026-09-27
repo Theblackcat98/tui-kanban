@@ -1,0 +1,49 @@
+---
+source: tests/snapshots.rs
+expression: "harness.screen(160, 45)"
+---
+ Snapshot Board   Board · All tasks
+                                                                                                        ▎
+  Columns              Backlog  3                  In Progress  2             Done  2                   ▎  Write the README
+                       ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ ▎
+ ▌ Backlog         3                                                                                    ▎  Backlog · #00000000
+   In Progress     2   ▌ Write the README          ▎ Calmer card style        ▎ Set up CI               ▎  updated 1d ago · created Aug 27
+   Done            2   ▌ - line 1                  ▎ Tiles with an accent …   ▎ fmt, clippy and tests.  ▎
+                       ▌ ◷ 1d ago                  ▎ ◷ 12m ago                ▎ ◷ 5h ago                ▎    - line 3                                         │
+                                                                                                        ▎    - line 4                                         │
+                       ▎ Record a demo             ▎ Command table            ▎ Snapshot tests          ▎    - line 5                                         ┃
+                       ▎ Commit the .tape file …   ▎ Every keybinding defi…   ▎ ◷ 1d ago                ▎    - line 6                                         ┃
+                       ▎ ◷ 3d ago                  ▎ ◷ 1h ago                                           ▎    - line 7                                         ┃
+                                                                                                        ▎    - line 8                                         ┃
+                       ▎ Package release                                                                ▎    - line 9                                         ┃
+                       ▎ binaries                                                                       ▎    - line 10                                        ┃
+                       ▎ ◷ Aug 20                                                                       ▎    - line 11                                        ┃
+                                                                                                        ▎    - line 12                                        ┃
+                                                                                                        ▎    - line 13                                        ┃
+                                                                                                        ▎    - line 14                                        ┃
+                                                                                                        ▎    - line 15                                        ┃
+                                                                                                        ▎    - line 16                                        ┃
+                                                                                                        ▎    - line 17                                        ┃
+                                                                                                        ▎    - line 18                                        ┃
+                                                                                                        ▎    - line 19                                        ┃
+                                                                                                        ▎    - line 20                                        ┃
+                                                                                                        ▎    - line 21                                        ┃
+                                                                                                        ▎    - line 22                                        ┃
+                                                                                                        ▎    - line 23                                        ┃
+                                                                                                        ▎    - line 24                                        ┃
+                                                                                                        ▎    - line 25                                        ┃
+                                                                                                        ▎    - line 26                                        ┃
+                                                                                                        ▎    - line 27                                        ┃
+                                                                                                        ▎    - line 28                                        ┃
+                                                                                                        ▎    - line 29                                        ┃
+                                                                                                        ▎    - line 30                                        ┃
+                                                                                                        ▎    - line 31                                        ┃
+                                                                                                        ▎    - line 32                                        ┃
+                                                                                                        ▎    - line 33                                        ┃
+                                                                                                        ▎    - line 34                                        ┃
+                                                                                                        ▎    - line 35                                        ┃
+                                                                                                        ▎    - line 36                                        ┃
+                                                                                                        ▎    - line 37                                        │
+                                                                                                        ▎    - line 38                                        │
+                                                                                                        ▎
+ DETAIL   ● saved   e edit   H/L move   d delete   Esc close   j/k scroll   ? help

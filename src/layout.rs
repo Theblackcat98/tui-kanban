@@ -1,20 +1,31 @@
 //! Layout decisions that depend on the terminal size, worked out in one
-//! place so the key handlers and the renderer always agree.
+//! place so the key handlers and the renderer always agree. See the
+//! spacing and breakpoint sections of `docs/design.md`.
 
 /// The smallest terminal the app can be used in. Below this, a "terminal
 /// too small" screen is shown and only quitting works.
 pub const MIN_WIDTH: u16 = 40;
 pub const MIN_HEIGHT: u16 = 12;
 
-/// The narrowest card in the All tasks grid; the grid shows as many cards
-/// per row as fit, up to [`MAX_CARDS_PER_ROW`].
+/// Terminals narrower than this are [`Breakpoint::Compact`].
+pub const REGULAR_MIN_WIDTH: u16 = 80;
+/// Terminals at least this wide are [`Breakpoint::Wide`].
+pub const WIDE_MIN_WIDTH: u16 = 140;
+
+/// The column rail's width, including its right edge.
+pub const RAIL_WIDTH: u16 = 22;
+/// Cells between lanes, and between All tasks cards in a row.
+pub const LANE_GUTTER: u16 = 2;
+/// Cells on each side of the lane area.
+pub const PAGE_MARGIN: u16 = 1;
+/// Blank rows between cards.
+pub const CARD_GAP: u16 = 1;
+/// The narrowest All tasks card; rows hold as many as fit, up to
+/// [`MAX_CARDS_PER_ROW`].
 pub const MIN_CARD_WIDTH: u16 = 30;
 pub const MAX_CARDS_PER_ROW: u16 = 3;
-
-/// Terminals narrower than this hide the column rail.
-pub const REGULAR_MIN_WIDTH: u16 = 76;
-/// Terminals at least this wide show every column side by side.
-pub const WIDE_MIN_WIDTH: u16 = 110;
+/// The pinned detail drawer's width at the Wide breakpoint.
+pub const PINNED_DRAWER_WIDTH: u16 = 56;
 
 /// Whether a terminal of this size is big enough to use.
 pub fn fits(width: u16, height: u16) -> bool {
@@ -23,11 +34,11 @@ pub fn fits(width: u16, height: u16) -> bool {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Breakpoint {
-    /// One column at a time, no rail.
+    /// One lane at a time, no rail, and a full-width detail drawer.
     Compact,
-    /// The rail plus one column at a time.
+    /// The rail plus lanes, with the detail drawer over the right side.
     Regular,
-    /// The rail plus every column.
+    /// As Regular, with the detail drawer pinned beside the lanes.
     Wide,
 }
 
@@ -46,15 +57,26 @@ impl Breakpoint {
         self != Self::Compact
     }
 
-    pub fn shows_all_columns(self) -> bool {
-        self == Self::Wide
+    /// Whether the Board view shows several lanes side by side.
+    pub fn shows_several_lanes(self) -> bool {
+        self != Self::Compact
     }
 
-    /// Whether the detail drawer takes the full width instead of sliding
-    /// in beside the board.
+    /// Whether the detail drawer covers the full width.
     pub fn full_width_drawer(self) -> bool {
         self == Self::Compact
     }
+
+    /// Whether the detail drawer sits beside the lanes instead of over
+    /// them.
+    pub fn pinned_drawer(self) -> bool {
+        self == Self::Wide
+    }
+}
+
+/// How many All tasks cards fit in a row of this width.
+pub fn cards_per_row(width: u16) -> u16 {
+    ((width + LANE_GUTTER) / (MIN_CARD_WIDTH + LANE_GUTTER)).clamp(1, MAX_CARDS_PER_ROW)
 }
 
 #[cfg(test)]
@@ -64,12 +86,21 @@ mod tests {
     #[test]
     fn breakpoints_follow_the_width() {
         assert_eq!(Breakpoint::from_width(0), Breakpoint::Compact);
-        assert_eq!(Breakpoint::from_width(75), Breakpoint::Compact);
-        assert_eq!(Breakpoint::from_width(76), Breakpoint::Regular);
-        assert_eq!(Breakpoint::from_width(109), Breakpoint::Regular);
-        assert_eq!(Breakpoint::from_width(110), Breakpoint::Wide);
+        assert_eq!(Breakpoint::from_width(79), Breakpoint::Compact);
+        assert_eq!(Breakpoint::from_width(80), Breakpoint::Regular);
+        assert_eq!(Breakpoint::from_width(139), Breakpoint::Regular);
+        assert_eq!(Breakpoint::from_width(140), Breakpoint::Wide);
         assert!(!Breakpoint::Compact.shows_rail());
         assert!(Breakpoint::Regular.shows_rail());
-        assert!(!Breakpoint::Regular.shows_all_columns());
+        assert!(!Breakpoint::Regular.pinned_drawer());
+        assert!(Breakpoint::Wide.pinned_drawer());
+    }
+
+    #[test]
+    fn cards_per_row_fits_the_width() {
+        assert_eq!(cards_per_row(20), 1);
+        assert_eq!(cards_per_row(61), 1);
+        assert_eq!(cards_per_row(62), 2);
+        assert_eq!(cards_per_row(200), 3);
     }
 }
