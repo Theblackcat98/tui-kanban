@@ -31,7 +31,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock)
 
 fn render_board(frame: &mut Frame<'_>, area: Rect, app: &App, clock: Clock) {
     if area.width < 90 {
-        render_column(frame, area, app, app.selected_column, clock);
+        render_column(frame, area, app, app.active_column, clock);
         return;
     }
 
@@ -54,8 +54,7 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
     let Some(column) = app.board.columns.get(column_index) else {
         return;
     };
-    let focused =
-        app.focus == crate::app::FocusRegion::Cards && app.selected_column == column_index;
+    let focused = app.focus == crate::app::FocusRegion::Cards && app.active_column == column_index;
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(if focused {
@@ -129,7 +128,7 @@ fn render_column(frame: &mut Frame<'_>, area: Rect, app: &App, column_index: usi
     let card_height = cards::CARD_HEIGHT.min(list_area.height);
     let capacity = (list_area.height / cards::CARD_HEIGHT).max(1) as usize;
     let selected_visual = if focused {
-        app.selected_task_visual_index(column_index)
+        app.selected_visual_index(column_index).unwrap_or(0)
     } else {
         0
     };

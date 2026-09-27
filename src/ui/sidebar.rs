@@ -29,7 +29,7 @@ pub(crate) fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
         if y >= area.y.saturating_add(area.height) {
             break;
         }
-        let selected = index == app.selected_column;
+        let selected = index == app.active_column;
         let focused = app.focus == FocusRegion::Rail;
         let background = if selected && focused {
             app.theme.selection

@@ -147,6 +147,7 @@ impl Harness {
         let mut app = App::new(store, false, clock()).unwrap();
         // Tests must not depend on whether NO_COLOR is set in the environment.
         app.theme = Theme::mocha();
+        app.resize(100, 30);
         Self {
             _directory: directory,
             app,
@@ -166,7 +167,8 @@ impl Harness {
         self.keys(&keys)
     }
 
-    fn render(&self, width: u16, height: u16) -> Buffer {
+    fn render(&mut self, width: u16, height: u16) -> Buffer {
+        self.app.resize(width, height);
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|frame| tui_kanban::ui::render(frame, &self.app, clock()))
@@ -174,7 +176,7 @@ impl Harness {
         terminal.backend().buffer().clone()
     }
 
-    fn screen(&self, width: u16, height: u16) -> String {
+    fn screen(&mut self, width: u16, height: u16) -> String {
         buffer_text(&self.render(width, height))
     }
 }
@@ -215,7 +217,7 @@ const SIZES: [(u16, u16); 3] = [(60, 20), (100, 30), (160, 45)];
 
 #[test]
 fn board_view_at_each_size() {
-    let harness = Harness::new(typical_board());
+    let mut harness = Harness::new(typical_board());
     for (width, height) in SIZES {
         screen_snapshot!(format!("board_{width}x{height}"), harness, width, height);
     }
@@ -315,14 +317,14 @@ fn toast_showing() {
 
 #[test]
 fn empty_board() {
-    let harness = Harness::new(Board::default());
+    let mut harness = Harness::new(Board::default());
     screen_snapshot!("empty_100x30", harness, 100, 30);
     screen_snapshot!("empty_60x20", harness, 60, 20);
 }
 
 #[test]
 fn twelve_columns() {
-    let harness = Harness::new(many_columns_board());
+    let mut harness = Harness::new(many_columns_board());
     screen_snapshot!("twelve_columns_160x45", harness, 160, 45);
     screen_snapshot!("twelve_columns_100x30", harness, 100, 30);
 }
@@ -337,7 +339,7 @@ fn long_and_wide_character_text() {
 
 #[test]
 fn tiny_terminal() {
-    let harness = Harness::new(typical_board());
+    let mut harness = Harness::new(typical_board());
     screen_snapshot!("tiny_30x8", harness, 30, 8);
 }
 
