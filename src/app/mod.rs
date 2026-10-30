@@ -2336,7 +2336,10 @@ mod tests {
         assert!(entries[2].detail.starts_with("new · "));
         press(&mut app, &[KeyCode::Char('j'), KeyCode::Enter]);
         assert_eq!(app.model.board.name, "Other");
-        assert_eq!(app.store().path(), other);
+        assert_eq!(
+            crate::boards::absolute(app.store().path()),
+            crate::boards::absolute(&other)
+        );
         assert!(app.model.ui.screens.is_empty());
         assert!(!app.model.session.history.can_undo());
         assert_eq!(toast_message(&app), "Opened Other");
