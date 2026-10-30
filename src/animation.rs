@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-/// The frame interval while an animation is running (~30 FPS).
-pub const FRAME_INTERVAL: Duration = Duration::from_millis(33);
+/// The frame interval while an animation is running (~60 FPS).
+pub const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AnimationSettings {
@@ -166,5 +166,25 @@ mod tests {
             let value = step as f32 / 10.0;
             assert!((0.0..=1.0).contains(&ease_out_cubic(value)));
         }
+    }
+
+    #[test]
+    fn test_frame_interval_is_60fps() {
+        assert_eq!(FRAME_INTERVAL, Duration::from_millis(16));
+    }
+
+    #[test]
+    fn test_animations_advance_per_frame() {
+        let mut engine = AnimationEngine::new(AnimationSettings { enabled: true });
+        let start = Instant::now();
+        engine.start(AnimationKind::Modal, Duration::from_millis(180), start);
+
+        let mut now = start;
+        let mut frames = 0;
+        while let Some(timeout) = engine.next_frame_timeout(now) {
+            frames += 1;
+            now += timeout;
+        }
+        assert!(frames > 5, "Should run at least a few frames at ~60fps");
     }
 }

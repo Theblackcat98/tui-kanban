@@ -581,11 +581,11 @@ fn restore_terminal() -> Result<()> {
 fn run_loop(terminal: &mut DefaultTerminal, app: &mut App, mouse: bool) -> Result<()> {
     let mut needs_redraw = true;
     loop {
-        // Tick on every iteration, not only when polling times out, so
-        // toasts expire and animations finish while keys keep arriving.
         let clock = Clock::now();
         needs_redraw |= app.poll_saving(clock);
+
         app.tick(clock);
+
         if needs_redraw {
             terminal.draw(|frame| ui::render(frame, &app.model, clock))?;
             needs_redraw = false;
@@ -594,7 +594,7 @@ fn run_loop(terminal: &mut DefaultTerminal, app: &mut App, mouse: bool) -> Resul
             return Ok(());
         }
 
-        let timeout = app.next_timeout(clock.instant);
+        let timeout = app.next_timeout(Clock::now().instant);
         if event::poll(timeout)? {
             match event::read()? {
                 Event::Key(key) => {
@@ -2476,5 +2476,125 @@ mod tests {
             clock(),
         );
         assert_eq!(effects, vec![Effect::Quit]);
+    }
+
+    #[test]
+    fn test_all_tasks_selection_lost_after_search() {
+        let (_dir, mut app) = test_app_with(false);
+        app.model.ui.view = crate::app::model::ViewMode::AllTasks;
+
+        let clock = clock();
+
+        app.dispatch(Action::Command(crate::command::CommandId::QuickAdd), clock);
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char('t'),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char('1'),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Enter,
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+
+        app.dispatch(Action::Command(crate::command::CommandId::QuickAdd), clock);
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char('t'),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char('2'),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Enter,
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+
+        let initial_tasks = app.model.visible_tasks().len();
+        assert_eq!(initial_tasks, 2);
+
+        // Let's dispatch search by typing
+        let action = Action::Command(crate::command::CommandId::Search);
+        app.dispatch(action, clock);
+
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char('x'),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char('y'),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Char('z'),
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+
+        assert_eq!(app.model.selected_task_id(), None);
+
+        // Clear search with backspace to make tasks visible again
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Backspace,
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Backspace,
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+        app.handle_key(
+            ratatui::crossterm::event::KeyEvent::new(
+                ratatui::crossterm::event::KeyCode::Backspace,
+                ratatui::crossterm::event::KeyModifiers::NONE,
+            ),
+            clock,
+        );
+
+        assert_eq!(app.model.visible_tasks().len(), initial_tasks);
+        app.model.ui.selected = None;
+        assert_eq!(app.model.selected_task_id(), None);
+
+        // Now there are visible tasks, step match down
+        let step_action = Action::Command(crate::command::CommandId::NextCard);
+        app.dispatch(step_action, clock);
+        assert_eq!(
+            app.model.selected_task_id(),
+            Some(app.model.visible_tasks()[0].id)
+        );
     }
 }

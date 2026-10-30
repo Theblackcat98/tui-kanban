@@ -652,13 +652,6 @@ impl Updater<'_> {
             .search
             .set_query(query, self.clock.wall_millis);
         self.model.reconcile_selection();
-        // With nothing matching in the active lane, go to the first match
-        // anywhere rather than leave the focus on an empty lane.
-        if self.model.selected_task_id().is_none()
-            && let Some(first) = self.model.visible_tasks().first()
-        {
-            self.model.select_task(first.id);
-        }
     }
 
     /// Selects the next (or previous) match in board order, across every

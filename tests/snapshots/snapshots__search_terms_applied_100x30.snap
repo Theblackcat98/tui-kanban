@@ -7,10 +7,10 @@ expression: "harness.screen(100, 30)"
 
   Columns              Backlog  0/3              In Progress  1/2          Done  0/2
                        ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
-   Backlog       0/3
- ▌ In Progress   1/2   No matches                ▌ Command table           No matches
-   Done          0/2                             ▌ Every keybinding def…
-                                                 ▌ ◷ 1h ago
+ ▌ Backlog       0/3
+   In Progress   1/2   No matches                ▎ Command table           No matches
+   Done          0/2                             ▎ Every keybinding def…
+                                                 ▎ ◷ 1h ago
 
 
 
@@ -31,4 +31,4 @@ expression: "harness.screen(100, 30)"
 
 
 
- BOARD   ● saved   Esc clear   Tab rail   j/k card   h/l column   v view   n/N new   Enter open
+ BOARD   ● saved   Esc clear   Tab rail   j/k card   h/l column   v view   n/N new   / search
